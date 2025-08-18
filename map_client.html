@@ -1,0 +1,1370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GG Guild Map</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        
+        .container {
+            position: relative;
+            height: 100vh;
+        }
+        
+        .sidebar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100%;
+            background: rgba(45, 45, 45, 0.95);
+            padding: 15px;
+            border-right: 2px solid #444;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        
+        .show-sidebar-btn {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1001;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #ffd700;
+            color: #ffd700;
+            border-radius: 4px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .connection-section {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #444;
+        }
+        
+        .header-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .toggle-btn {
+            background: #555;
+            border: 1px solid #777;
+            color: #ffd700;
+            border-radius: 4px;
+            padding: 5px 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .toggle-btn:hover {
+            background: #666;
+            border-color: #ffd700;
+        }
+        
+        .sidebar.hidden {
+            transform: translateX(-100%);
+            opacity: 0;
+        }
+        
+        .sidebar {
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        
+        .container.sidebar-hidden .show-sidebar-btn {
+            display: block;
+        }
+        
+        .connection-section h3 {
+            margin: 0;
+            color: #ffd700;
+            font-size: 18px;
+        }
+        
+        .connection-status {
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-weight: bold;
+            text-align: center;
+            font-size: 14px;
+        }
+        
+        .connected {
+            background: #2e7d32;
+            color: white;
+        }
+        
+        .disconnected {
+            background: #c62828;
+            color: white;
+        }
+        
+        .connecting {
+            background: #f57c00;
+            color: white;
+        }
+        
+        .layer-control {
+            margin-bottom: 20px;
+        }
+        
+        .layer-control h3 {
+            margin: 0 0 10px 0;
+            color: #ffd700;
+            font-size: 16px;
+        }
+        
+        .layer-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            padding: 5px;
+            background: #3d3d3d;
+            border-radius: 3px;
+        }
+        
+        .layer-item input[type="checkbox"] {
+            margin-right: 8px;
+        }
+        
+        .layer-item label {
+            cursor: pointer;
+            flex: 1;
+        }
+        
+        .color-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-left: 8px;
+        }
+        
+        .ping-controls {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #444;
+        }
+        
+        .ping-note {
+            background: #3d3d3d;
+            padding: 8px 12px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+            color: #ffd700;
+            margin-bottom: 15px;
+            border: 1px solid #555;
+        }
+        
+        .snap-to-ping-control {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid #444;
+        }
+        
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .toggle-label input[type="checkbox"] {
+            display: none;
+        }
+        
+        .toggle-slider {
+            width: 40px;
+            height: 20px;
+            background: #555;
+            border-radius: 20px;
+            margin-right: 10px;
+            position: relative;
+            transition: background 0.3s;
+        }
+        
+        .toggle-slider::after {
+            content: '';
+            width: 16px;
+            height: 16px;
+            background: white;
+            border-radius: 50%;
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            transition: left 0.3s;
+        }
+        
+        .toggle-label input:checked + .toggle-slider {
+            background: #4caf50;
+        }
+        
+        .toggle-label input:checked + .toggle-slider::after {
+            left: 22px;
+        }
+        
+        .online-users {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #444;
+        }
+        
+        .user-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .user-item {
+            padding: 5px 8px;
+            background: #3d3d3d;
+            margin-bottom: 5px;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        
+        #map {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* Hide zoom control buttons */
+        .leaflet-control-zoom {
+            display: none;
+        }
+        
+        .ping-popup {
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        
+        .leaflet-popup-content-wrapper {
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 5px;
+        }
+        
+        .leaflet-popup-content {
+            color: white;
+            margin: 8px;
+        }
+        
+        /* Ping animation styles */
+        .ping-icon {
+            position: relative;
+        }
+        
+        .ping-icon-glow {
+            animation: glowPulse 1.5s ease-in-out infinite, fadeOut 30s ease-in-out forwards;
+        }
+        
+        @keyframes glowPulse {
+            0%, 100% { 
+                filter: drop-shadow(0 0 20px rgba(255, 215, 0, 1)) drop-shadow(0 0 40px rgba(255, 215, 0, 0.8)); 
+            }
+            50% { 
+                filter: drop-shadow(0 0 50px rgba(255, 215, 0, 1)) drop-shadow(0 0 80px rgba(255, 215, 0, 0.9)); 
+            }
+        }
+        
+        @keyframes fadeOut {
+            0% { opacity: 1; }
+            83.33% { opacity: 1; }  /* 25 seconds of 30 total */
+            100% { opacity: 0; }    /* fade out in last 5 seconds */
+        }
+        
+        .ping-ripple-safe {
+            position: absolute;
+            border: 3px solid rgba(255, 215, 0, 0.8);
+            border-radius: 50%;
+            pointer-events: none;
+            animation: rippleEffectSafe 1.5s ease-out 5;
+            z-index: 500;
+            width: 20px;
+            height: 20px;
+            transform-origin: center center;
+        }
+        
+        @keyframes rippleEffectSafe {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(6);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <button id="show-sidebar" class="show-sidebar-btn" title="Show Sidebar">☰ GG Map</button>
+        <div class="sidebar">
+            <div class="connection-section">
+                <div class="header-controls">
+                    <h3>🗺️ GG Map</h3>
+                    <button id="toggle-sidebar" class="toggle-btn" title="Hide/Show Sidebar">❮</button>
+                </div>
+                <div id="connection-status" class="connection-status disconnected">Disconnected</div>
+            </div>
+            
+            <div class="layer-control">
+                <h3>Map Layers</h3>
+                <div class="layer-item">
+                    <input type="checkbox" id="layer-dockmasters" checked>
+                    <label for="layer-dockmasters">Dockmasters</label>
+                    <div class="color-indicator" style="background: #2196F3;"></div>
+                </div>
+                <div class="layer-item">
+                    <input type="checkbox" id="layer-gg-runes" checked>
+                    <label for="layer-gg-runes">GG Runes</label>
+                    <div class="color-indicator" style="background: #4CAF50;"></div>
+                </div>
+                <div class="layer-item">
+                    <input type="checkbox" id="layer-witcher-runes">
+                    <label for="layer-witcher-runes">Witcher Runes</label>
+                    <div class="color-indicator" style="background: #FF9800;"></div>
+                </div>
+                <div class="layer-item">
+                    <input type="checkbox" id="layer-resources">
+                    <label for="layer-resources">Resources</label>
+                    <div class="color-indicator" style="background: #9C27B0;"></div>
+                </div>
+                <div class="layer-item">
+                    <input type="checkbox" id="layer-dungeons">
+                    <label for="layer-dungeons">Dungeons</label>
+                    <div class="color-indicator" style="background: #F44336;"></div>
+                </div>
+            </div>
+            
+            <div class="ping-controls">
+                <div class="ping-note">📍 Ping = Ctrl + Click</div>
+                
+                <div class="snap-to-ping-control">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="snap-to-ping" checked>
+                        <span class="toggle-slider"></span>
+                        Auto-zoom to new pings
+                    </label>
+                    <small>Automatically center the map when someone else pings a location.</small>
+                </div>
+                
+                <div class="snap-to-ping-control">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="ping-sounds" checked>
+                        <span class="toggle-slider"></span>
+                        Ping sounds
+                    </label>
+                    <small>Play sound effects for all ping actions (yours and others).</small>
+                </div>
+            </div>
+            
+            <div class="online-users">
+                <h3>Online Guild Members (<span id="user-count">0</span>)</h3>
+                <div id="user-list" class="user-list">
+                    <div class="user-item">Connecting...</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="map"></div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        // Configuration
+        const SERVER_URL = '172.105.151.47:8080';
+        const MAP_IMAGE_PATH = '/static/ggmap.png';
+        
+        // Global variables
+        let map;
+        let websocket;
+        let currentUser = null;
+        let onlineUsers = new Set();
+        let mapLayers = {};
+        let userPings = new Map();
+        
+        // Audio for ping sound
+        const pingAudio = new Audio('/static/light.wav');
+        
+        // Layer colors and icons
+        const layerConfig = {
+            'dockmasters': { color: '#2196F3', icon: '⚓' },
+            'gg-runes': { color: '#4CAF50', icon: '🗿' },
+            'witcher-runes': { color: '#FF9800', icon: '⚡' },
+            'resources': { color: '#9C27B0', icon: '💎' },
+            'dungeons': { color: '#F44336', icon: '🏰' }
+        };
+        
+        // Initialize the map
+        function initMap() {
+            // Create the map with no default tiles
+            map = L.map('map', {
+                crs: L.CRS.Simple,
+                minZoom: -2,
+                maxZoom: 3,
+                zoomControl: true,
+                center: [3072, 5376], // Center of the 6144x10752 map (height/2, width/2)
+                zoom: 0
+            });
+            
+            // Add the custom game map image with correct bounds
+            const bounds = [[0, 0], [6144, 10752]]; // Match your actual image size (height, width)
+            const imageOverlay = L.imageOverlay(MAP_IMAGE_PATH, bounds);
+            imageOverlay.addTo(map);
+            
+            // Set the view to show the full map properly
+            map.fitBounds(bounds);
+            map.setMaxBounds([[-200, -200], [6344, 10952]]); // Add padding but constrain bounds
+            
+            // Initialize layer groups
+            for (const layerName in layerConfig) {
+                mapLayers[layerName] = L.layerGroup();
+                
+                // Only add to map if checkbox is checked by default
+                const checkbox = document.getElementById(`layer-${layerName}`);
+                if (checkbox && checkbox.checked) {
+                    mapLayers[layerName].addTo(map);
+                }
+            }
+            
+            // Add click handler for pinging (Control + Left Click)
+            map.on('click', handleMapClick);
+            
+            // Set up layer controls
+            setupLayerControls();
+        }
+        
+        function setupLayerControls() {
+            // Add event listeners to layer checkboxes
+            for (const layerName in layerConfig) {
+                const checkbox = document.getElementById(`layer-${layerName}`);
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        map.addLayer(mapLayers[layerName]);
+                    } else {
+                        map.removeLayer(mapLayers[layerName]);
+                    }
+                });
+            }
+        }
+        
+        function handleMapClick(e) {
+            // Only ping if Control key is held down
+            if (!e.originalEvent.ctrlKey || !websocket) return;
+            
+            const { lat, lng } = e.latlng;
+            const pingData = {
+                type: 'ping',
+                user: currentUser,
+                lat: lat,
+                lng: lng,
+                timestamp: Date.now()
+            };
+            
+            // Play ping sound (check if sounds are enabled)
+            const pingSoundsEnabled = document.getElementById('ping-sounds').checked;
+            if (pingSoundsEnabled) {
+                try {
+                    pingAudio.currentTime = 0; // Reset to start
+                    pingAudio.play().catch(e => console.log('Could not play ping sound:', e));
+                } catch (e) {
+                    console.log('Could not play ping sound:', e);
+                }
+            }
+            
+            // Send ping to server
+            websocket.send(JSON.stringify(pingData));
+            
+            // Add ping to map immediately for responsiveness (your own ping)
+            addPingToMap(pingData, false);
+        }
+        
+        function addPingToMap(pingData, fromOtherUser = false) {
+            const { user, lat, lng, timestamp } = pingData;
+            const timeStr = new Date(timestamp).toLocaleTimeString();
+            
+            // Play sound for pings from other users
+            if (fromOtherUser) {
+                // Check if ping sounds are enabled
+                const pingSoundsEnabled = document.getElementById('ping-sounds').checked;
+                if (pingSoundsEnabled) {
+                    try {
+                        pingAudio.currentTime = 0; // Reset to start
+                        pingAudio.play().catch(e => console.log('Could not play ping sound:', e));
+                    } catch (e) {
+                        console.log('Could not play ping sound:', e);
+                    }
+                }
+                
+                // Snap to ping if enabled
+                const snapToPing = document.getElementById('snap-to-ping').checked;
+                if (snapToPing) {
+                    map.setView([lat, lng], -1, {
+                        animate: true,
+                        duration: 1.0
+                    });
+                }
+            }
+            
+            // Create custom icon with user color distinction
+            const isCurrentUser = user === currentUser;
+            
+            // Test with simplified marker (no animations)
+            const pingIcon = L.divIcon({
+                className: 'ping-icon-glow', // New glow animation class
+                html: `
+                    <div class="ping-username" style="position: absolute; top: -25px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.8); color: ${isCurrentUser ? '#ffd700' : '#ff5722'}; padding: 2px 6px; border-radius: 3px; font-size: 12px; font-weight: bold; white-space: nowrap; border: 1px solid ${isCurrentUser ? '#ffd700' : '#ff5722'};">${user}</div>
+                    <div style="background: ${isCurrentUser ? 'rgba(255, 215, 0, 0.9)' : 'rgba(255, 87, 34, 0.9)'}; border: 2px solid ${isCurrentUser ? '#ffd700' : '#ff5722'}; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: white; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.4);">📍</div>
+                `,
+                iconSize: [28, 28],
+                iconAnchor: [14, 14]
+            });
+            
+            // Create marker
+            const marker = L.marker([lat, lng], { icon: pingIcon });
+            const popup = L.popup({
+                className: 'ping-popup'
+            }).setContent(`
+                <div>
+                    <strong>${user}${isCurrentUser ? ' (You)' : ''}</strong><br>
+                    <small>Pinged at ${timeStr}</small>
+                    <br><small>Lat: ${lat.toFixed(0)}, Lng: ${lng.toFixed(0)}</small>
+                </div>
+            `);
+            
+            marker.bindPopup(popup);
+            marker.addTo(map);
+            
+            // Store marker for potential removal
+            if (!userPings.has(user)) {
+                userPings.set(user, []);
+            }
+            userPings.get(user).push(marker);
+            
+            // Auto-remove ping after 30 seconds
+            setTimeout(() => {
+                map.removeLayer(marker);
+                // Also remove from user pings tracking
+                if (userPings.has(user)) {
+                    const userMarkers = userPings.get(user);
+                    const index = userMarkers.indexOf(marker);
+                    if (index > -1) {
+                        userMarkers.splice(index, 1);
+                    }
+                }
+            }, 30000); // 30 seconds
+            
+            // Remove old pings from this user (keep only last 3, excluding the one that will auto-decay)
+            const userMarkers = userPings.get(user);
+            if (userMarkers.length > 3) {
+                const oldMarker = userMarkers.shift();
+                map.removeLayer(oldMarker);
+            }
+        }
+        
+        function createRippleEffect(lat, lng, fromOtherUser) {
+            // Create ripple element
+            const ripple = document.createElement('div');
+            ripple.className = 'ping-ripple';
+            
+            // Convert lat/lng to pixel coordinates on the map pane
+            const point = map.latLngToLayerPoint([lat, lng]);
+            
+            // Position centered on the ping location
+            ripple.style.left = (point.x - 10) + 'px';
+            ripple.style.top = (point.y - 10) + 'px';
+            ripple.style.borderColor = fromOtherUser ? 'rgba(255, 87, 34, 0.8)' : 'rgba(255, 215, 0, 0.8)';
+            
+            // Store the lat/lng for zoom updates
+            ripple._lat = lat;
+            ripple._lng = lng;
+            
+            // Function to update position on zoom
+            const updatePosition = () => {
+                const newPoint = map.latLngToLayerPoint([ripple._lat, ripple._lng]);
+                ripple.style.left = (newPoint.x - 10) + 'px';
+                ripple.style.top = (newPoint.y - 10) + 'px';
+            };
+            
+            // Add zoom event listener
+            map.on('zoom', updatePosition);
+            map.on('zoomend', updatePosition);
+            
+            // Add to map pane instead of container
+            const mapPane = map.getPane('overlayPane');
+            mapPane.appendChild(ripple);
+            
+            // Remove after animation
+            setTimeout(() => {
+                if (ripple.parentNode) {
+                    map.off('zoom', updatePosition);
+                    map.off('zoomend', updatePosition);
+                    ripple.parentNode.removeChild(ripple);
+                }
+            }, 7500); // 5 iterations × 1.5s = 7.5s
+        }
+        
+        function createRippleEffectSafe(lat, lng, fromOtherUser) {
+            // Create ripple element
+            const ripple = document.createElement('div');
+            ripple.className = 'ping-ripple-safe';
+            
+            // Convert lat/lng to pixel coordinates ONCE and store
+            const point = map.latLngToLayerPoint([lat, lng]);
+            
+            // Position centered on the ping location
+            ripple.style.left = (point.x - 10) + 'px';
+            ripple.style.top = (point.y - 10) + 'px';
+            ripple.style.borderColor = fromOtherUser ? 'rgba(255, 87, 34, 0.8)' : 'rgba(255, 215, 0, 0.8)';
+            ripple.style.position = 'absolute';
+            ripple.style.pointerEvents = 'none';
+            ripple.style.zIndex = '500'; // Lower z-index to avoid interference
+            
+            // Add directly to map container (not to Leaflet panes)
+            const mapContainer = document.getElementById('map');
+            mapContainer.appendChild(ripple);
+            
+            // Remove after animation (no zoom tracking to avoid interference)
+            setTimeout(() => {
+                if (ripple.parentNode) {
+                    ripple.parentNode.removeChild(ripple);
+                }
+            }, 7500); // 5 iterations × 1.5s = 7.5s
+        }
+        
+        function connectToServer() {
+            const statusEl = document.getElementById('connection-status');
+            statusEl.textContent = 'Connecting...';
+            statusEl.className = 'connection-status connecting';
+            
+            // For now, we'll simulate a connection and user authentication
+            // In a real implementation, you'd integrate with your Discord OAuth flow
+            currentUser = prompt('Enter your guild username:') || 'Anonymous';
+            
+            try {
+                websocket = new WebSocket(`ws://${SERVER_URL}/map`);
+                
+                websocket.onopen = function(event) {
+                    console.log('Connected to map server');
+                    statusEl.textContent = 'Connected';
+                    statusEl.className = 'connection-status connected';
+                    
+                    // Send join message
+                    websocket.send(JSON.stringify({
+                        type: 'join',
+                        user: currentUser
+                    }));
+                };
+                
+                websocket.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    handleServerMessage(data);
+                };
+                
+                websocket.onclose = function(event) {
+                    console.log('Disconnected from map server');
+                    statusEl.textContent = 'Disconnected';
+                    statusEl.className = 'connection-status disconnected';
+                    
+                    // Attempt to reconnect after 3 seconds
+                    setTimeout(connectToServer, 3000);
+                };
+                
+                websocket.onerror = function(error) {
+                    console.error('WebSocket error:', error);
+                    statusEl.textContent = 'Connection Error';
+                    statusEl.className = 'connection-status disconnected';
+                };
+                
+            } catch (error) {
+                console.error('Failed to connect:', error);
+                statusEl.textContent = 'Connection Failed';
+                statusEl.className = 'connection-status disconnected';
+                
+                // Retry connection
+                setTimeout(connectToServer, 3000);
+            }
+        }
+        
+        function handleServerMessage(data) {
+            switch (data.type) {
+                case 'ping':
+                    if (data.user !== currentUser) {
+                        addPingToMap(data, true); // fromOtherUser = true
+                    }
+                    break;
+                    
+                case 'user_list':
+                    updateUserList(data.users);
+                    break;
+                    
+                case 'user_joined':
+                    onlineUsers.add(data.user);
+                    updateUserList([...onlineUsers]);
+                    break;
+                    
+                case 'user_left':
+                    onlineUsers.delete(data.user);
+                    updateUserList([...onlineUsers]);
+                    // Remove pings from disconnected user
+                    removePingsFromUser(data.user);
+                    break;
+                    
+                default:
+                    console.log('Unknown message type:', data.type);
+            }
+        }
+        
+        function updateUserList(users) {
+            onlineUsers = new Set(users);
+            const userListEl = document.getElementById('user-list');
+            const userCountEl = document.getElementById('user-count');
+            
+            userCountEl.textContent = users.length;
+            
+            if (users.length === 0) {
+                userListEl.innerHTML = '<div class="user-item">No users online</div>';
+                return;
+            }
+            
+            userListEl.innerHTML = users.map(user => 
+                `<div class="user-item">${user === currentUser ? '👤 ' : ''}${user}</div>`
+            ).join('');
+        }
+        
+        function removePingsFromUser(user) {
+            if (userPings.has(user)) {
+                userPings.get(user).forEach(marker => map.removeLayer(marker));
+                userPings.delete(user);
+            }
+        }
+        
+        // Initialize everything when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            initMap();
+            connectToServer();
+            
+            // Add some sample markers for testing
+            addSampleMarkers();
+        });
+        
+        function addSampleMarkers() {
+            const imageHeight = 6144; // For Y axis flip
+            // Real Dockmaster coordinates
+            const dockmasterPOIs = [
+                { name: 'XD1', x: 3610, y: 1961, layer: 'dockmasters' },
+                { name: 'XD2', x: 4228, y: 2287, layer: 'dockmasters' },
+                { name: 'XD3', x: 4386, y: 2879, layer: 'dockmasters' },
+                { name: 'XD4', x: 4472, y: 2735, layer: 'dockmasters' },
+                { name: 'XD7', x: 3413, y: 3572, layer: 'dockmasters' },
+                { name: 'XD8', x: 3666, y: 2572, layer: 'dockmasters' },
+                { name: 'XD9', x: 4115, y: 2132, layer: 'dockmasters' },
+                { name: 'XD10', x: 4145, y: 3250, layer: 'dockmasters' },
+                { name: 'XD11', x: 3393, y: 3356, layer: 'dockmasters' },
+                { name: 'XD12', x: 3043, y: 3150, layer: 'dockmasters' },
+                { name: 'XD13', x: 3190, y: 2935, layer: 'dockmasters' },
+                { name: 'XD14', x: 3368, y: 2789, layer: 'dockmasters' },
+                { name: 'XP1', x: 4500, y: 2553, layer: 'dockmasters' },
+                { name: 'XP2', x: 4427, y: 2850, layer: 'dockmasters' },
+                { name: 'XP3', x: 3846, y: 3726, layer: 'dockmasters' },
+                { name: '1A-E', x: 3499, y: 1127, layer: 'dockmasters' },
+                { name: '1A-N', x: 1054, y: 329, layer: 'dockmasters' },
+                { name: '1A-S', x: 746, y: 3263, layer: 'dockmasters' },
+                { name: '1A-W', x: 1203, y: 633, layer: 'dockmasters' },
+                { name: '1B-E', x: 3920, y: 1292, layer: 'dockmasters' },
+                { name: '1B-N', x: 1000, y: 421, layer: 'dockmasters' },
+                { name: '1B-S', x: 937, y: 3013, layer: 'dockmasters' },
+                { name: '1C-E', x: 4345, y: 937, layer: 'dockmasters' },
+                { name: '1D-E', x: 4336, y: 796, layer: 'dockmasters' },
+                { name: '1E-E', x: 4339, y: 700, layer: 'dockmasters' },
+                { name: '1F-E', x: 4312, y: 547, layer: 'dockmasters' },
+                { name: '2A-N', x: 1750, y: 527, layer: 'dockmasters' },
+                { name: '2A-W', x: 1043, y: 590, layer: 'dockmasters' },
+                { name: '2B-E', x: 3947, y: 1300, layer: 'dockmasters' },
+                { name: '2B-N', x: 1361, y: 448, layer: 'dockmasters' },
+                { name: '2B-S', x: 1326, y: 3050, layer: 'dockmasters' },
+                { name: '2C-N', x: 1456, y: 533, layer: 'dockmasters' },
+                { name: '2C-W', x: 656, y: 603, layer: 'dockmasters' },
+                { name: '2D-N', x: 1473, y: 510, layer: 'dockmasters' },
+                { name: '2D-S', x: 1801, y: 3183, layer: 'dockmasters' },
+                { name: '2D-W', x: 840, y: 921, layer: 'dockmasters' },
+                { name: '2E-N', x: 1787, y: 573, layer: 'dockmasters' },
+                { name: '2F-N', x: 1872, y: 548, layer: 'dockmasters' },
+                { name: '2G-N', x: 2078, y: 442, layer: 'dockmasters' },
+                { name: '2G-W', x: 1111, y: 706, layer: 'dockmasters' },
+                { name: '3A-N', x: 1469, y: 913, layer: 'dockmasters' },
+                { name: '3A-S', x: 2065, y: 3164, layer: 'dockmasters' },
+                { name: '3A-W', x: 455, y: 822, layer: 'dockmasters' },
+                { name: '3B-S', x: 2264, y: 3264, layer: 'dockmasters' },
+                { name: '3C-S', x: 2440, y: 3343, layer: 'dockmasters' },
+                { name: '4A-E', x: 3719, y: 1369, layer: 'dockmasters' },
+                { name: '4A-N', x: 2552, y: 458, layer: 'dockmasters' },
+                { name: '4A-S', x: 2415, y: 3128, layer: 'dockmasters' },
+                { name: '4B-E', x: 3615, y: 1385, layer: 'dockmasters' },
+                { name: '4B-N', x: 2606, y: 459, layer: 'dockmasters' },
+                { name: '4B-S', x: 2427, y: 3032, layer: 'dockmasters' },
+                { name: '4B-W', x: 467, y: 1089, layer: 'dockmasters' },
+                { name: '4C-E', x: 3643, y: 1333, layer: 'dockmasters' },
+                { name: '4C-N', x: 2647, y: 362, layer: 'dockmasters' },
+                { name: '4E-N', x: 2619, y: 766, layer: 'dockmasters' },
+                { name: '5A-N', x: 3064, y: 424, layer: 'dockmasters' },
+                { name: '5A-S', x: 2868, y: 3497, layer: 'dockmasters' },
+                { name: '5B-S', x: 2870, y: 3517, layer: 'dockmasters' },
+                { name: '5C-S', x: 2747, y: 3289, layer: 'dockmasters' },
+                { name: '5E-E', x: 3535, y: 1488, layer: 'dockmasters' },
+                { name: '5F-E', x: 3645, y: 1559, layer: 'dockmasters' },
+                { name: '6A-E', x: 3634, y: 1634, layer: 'dockmasters' },
+                { name: '6A-N', x: 3423, y: 109, layer: 'dockmasters' },
+                { name: '6A-S', x: 2607, y: 3546, layer: 'dockmasters' },
+                { name: '6A-W', x: 633, y: 1258, layer: 'dockmasters' },
+                { name: '6B-N', x: 3653, y: 91, layer: 'dockmasters' },
+                { name: '6B-S', x: 2756, y: 3594, layer: 'dockmasters' },
+                { name: '6B-W', x: 872, y: 1303, layer: 'dockmasters' },
+                { name: '6C-N', x: 3779, y: 58, layer: 'dockmasters' },
+                { name: '6C-S', x: 3020, y: 3666, layer: 'dockmasters' },
+                { name: '6C-W', x: 775, y: 1187, layer: 'dockmasters' },
+                { name: '6D-N', x: 4075, y: 44, layer: 'dockmasters' },
+                { name: '6E-E', x: 3820, y: 1911, layer: 'dockmasters' },
+                { name: '6F-E', x: 4031, y: 1489, layer: 'dockmasters' },
+                { name: '7A-S', x: 3299, y: 3600, layer: 'dockmasters' },
+                { name: '7A-W', x: 354, y: 1744, layer: 'dockmasters' },
+                { name: '7B-S', x: 3285, y: 3554, layer: 'dockmasters' },
+                { name: '7B-W', x: 851, y: 1807, layer: 'dockmasters' },
+                { name: '7C-W', x: 933, y: 2266, layer: 'dockmasters' },
+                { name: '7D-W', x: 1132, y: 2541, layer: 'dockmasters' },
+                { name: '7E-W', x: 691, y: 1887, layer: 'dockmasters' },
+                { name: '7F-W', x: 722, y: 1864, layer: 'dockmasters' },
+                { name: '8A-S', x: 3428, y: 3812, layer: 'dockmasters' },
+                { name: '8A-W', x: 2292, y: 2570, layer: 'dockmasters' },
+                { name: '8B-W', x: 2290, y: 2423, layer: 'dockmasters' },
+                { name: '8C-W', x: 2230, y: 2163, layer: 'dockmasters' },
+                { name: '8D-W', x: 2030, y: 2029, layer: 'dockmasters' },
+                { name: '8E-W', x: 2043, y: 1753, layer: 'dockmasters' },
+                { name: '9A-W', x: 2280, y: 1527, layer: 'dockmasters' },
+                { name: '9B-W', x: 2175, y: 1457, layer: 'dockmasters' },
+                { name: '10A-W', x: 2183, y: 985, layer: 'dockmasters' },
+                { name: '11A-W', x: 2192, y: 1102, layer: 'dockmasters' },
+                { name: '13A-W', x: 2343, y: 969, layer: 'dockmasters' },
+                { name: 'GG-Shelter', x: 1655, y: 2667, layer: 'dockmasters' },
+                { name: 'GH', x: 4384, y: 6142, layer: 'dockmasters' }
+            ];
+            
+            // GG Runes - updated coordinates
+            const ggRunesPOIs = [
+                { name: "N1", x: 1019, y: 452, layer: "gg-runes" },
+                { name: "N2", x: 1107, y: 380, layer: "gg-runes" },
+                { name: "N3", x: 1063, y: 435, layer: "gg-runes" },
+                { name: "N4", x: 1155, y: 448, layer: "gg-runes" },
+                { name: "N5", x: 1262, y: 459, layer: "gg-runes" },
+                { name: "N6", x: 1345, y: 522, layer: "gg-runes" },
+                { name: "N7", x: 1409, y: 474, layer: "gg-runes" },
+                { name: "N8", x: 1327, y: 631, layer: "gg-runes" },
+                { name: "N9", x: 1464, y: 563, layer: "gg-runes" },
+                { name: "N10", x: 1543, y: 547, layer: "gg-runes" },
+                { name: "N11", x: 1657, y: 517, layer: "gg-runes" },
+                { name: "N12", x: 1706, y: 616, layer: "gg-runes" },
+                { name: "N13", x: 1919, y: 566, layer: "gg-runes" },
+                { name: "N14", x: 1368, y: 724, layer: "gg-runes" },
+                { name: "N15", x: 1530, y: 663, layer: "gg-runes" },
+                { name: "N16", x: 1645, y: 699, layer: "gg-runes" },
+                { name: "N17", x: 1424, y: 835, layer: "gg-runes" },
+                { name: "N18", x: 1477, y: 762, layer: "gg-runes" },
+                { name: "N19", x: 1559, y: 820, layer: "gg-runes" },
+                { name: "N20", x: 1676, y: 799, layer: "gg-runes" },
+                { name: "N21", x: 1729, y: 902, layer: "gg-runes" },
+                { name: "N22", x: 2051, y: 452, layer: "gg-runes" },
+                { name: "N23", x: 1972, y: 608, layer: "gg-runes" },
+                { name: "N24", x: 1895, y: 679, layer: "gg-runes" },
+                { name: "N25", x: 1909, y: 768, layer: "gg-runes" },
+                { name: "N26", x: 1793, y: 812, layer: "gg-runes" },
+                { name: "N27", x: 1813, y: 894, layer: "gg-runes" },
+                { name: "N28", x: 1797, y: 919, layer: "gg-runes" },
+                { name: "N29", x: 1834, y: 939, layer: "gg-runes" },
+                { name: "N30", x: 1899, y: 907, layer: "gg-runes" },
+                { name: "N31", x: 1945, y: 814, layer: "gg-runes" },
+                { name: "N32", x: 2024, y: 781, layer: "gg-runes" },
+                { name: "N33", x: 2092, y: 897, layer: "gg-runes" },
+                { name: "N34", x: 2197, y: 492, layer: "gg-runes" },
+                { name: "N35", x: 2377, y: 573, layer: "gg-runes" },
+                { name: "N36", x: 2358, y: 643, layer: "gg-runes" },
+                { name: "N37", x: 2346, y: 749, layer: "gg-runes" },
+                { name: "N38", x: 2485, y: 565, layer: "gg-runes" },
+                { name: "N39", x: 2514, y: 621, layer: "gg-runes" },
+                { name: "N40", x: 2447, y: 684, layer: "gg-runes" },
+                { name: "N41", x: 2421, y: 753, layer: "gg-runes" },
+                { name: "N42", x: 2429, y: 450, layer: "gg-runes" },
+                { name: "N43", x: 2591, y: 514, layer: "gg-runes" },
+                { name: "N44", x: 2614, y: 615, layer: "gg-runes" },
+                { name: "N45", x: 2625, y: 730, layer: "gg-runes" },
+                { name: "N46", x: 2664, y: 415, layer: "gg-runes" },
+                { name: "N47", x: 2714, y: 613, layer: "gg-runes" },
+                { name: "N48", x: 2802, y: 419, layer: "gg-runes" },
+                { name: "N49", x: 2949, y: 572, layer: "gg-runes" },
+                { name: "N50", x: 3186, y: 162, layer: "gg-runes" },
+                { name: "N51", x: 3221, y: 232, layer: "gg-runes" },
+                { name: "N52", x: 3261, y: 109, layer: "gg-runes" },
+                { name: "N53", x: 3287, y: 138, layer: "gg-runes" },
+                { name: "N54", x: 3408, y: 128, layer: "gg-runes" },
+                { name: "N55", x: 3467, y: 63, layer: "gg-runes" },
+                { name: "N56", x: 3528, y: 107, layer: "gg-runes" },
+                { name: "N57", x: 3551, y: 181, layer: "gg-runes" },
+                { name: "N58", x: 3647, y: 138, layer: "gg-runes" },
+                { name: "N59", x: 3747, y: 112, layer: "gg-runes" },
+                { name: "N60", x: 4050, y: 73, layer: "gg-runes" },
+                { name: "N61", x: 4286, y: 140, layer: "gg-runes" },
+                { name: "N62", x: 3184, y: 313, layer: "gg-runes" },
+                { name: "N63", x: 3330, y: 301, layer: "gg-runes" },
+                { name: "N64", x: 3463, y: 252, layer: "gg-runes" },
+                { name: "N65", x: 3603, y: 233, layer: "gg-runes" },
+                { name: "N66", x: 3604, y: 343, layer: "gg-runes" },
+                { name: "N67", x: 3693, y: 429, layer: "gg-runes" },
+                { name: "N68", x: 3821, y: 407, layer: "gg-runes" },
+                { name: "N69", x: 3833, y: 293, layer: "gg-runes" },
+                { name: "N70", x: 3867, y: 340, layer: "gg-runes" },
+                { name: "N71", x: 3929, y: 238, layer: "gg-runes" },
+                { name: "N72", x: 3931, y: 351, layer: "gg-runes" },
+                { name: "N73", x: 4093, y: 226, layer: "gg-runes" },
+                { name: "N74", x: 4201, y: 300, layer: "gg-runes" },
+                { name: "N75", x: 4358, y: 280, layer: "gg-runes" },
+                // E Series
+                { name: "E1", x: 3239, y: 592, layer: "gg-runes" },
+                { name: "E2", x: 3289, y: 476, layer: "gg-runes" },
+                { name: "E3", x: 3351, y: 536, layer: "gg-runes" },
+                { name: "E4", x: 3513, y: 556, layer: "gg-runes" },
+                { name: "E5", x: 3289, y: 704, layer: "gg-runes" },
+                { name: "E6", x: 3303, y: 846, layer: "gg-runes" },
+                { name: "E7", x: 3339, y: 660, layer: "gg-runes" },
+                { name: "E8", x: 3351, y: 781, layer: "gg-runes" },
+                { name: "E9", x: 3437, y: 700, layer: "gg-runes" },
+                { name: "E10", x: 3445, y: 821, layer: "gg-runes" },
+                { name: "E11", x: 3428, y: 924, layer: "gg-runes" },
+                { name: "E12", x: 3481, y: 642, layer: "gg-runes" },
+                { name: "E13", x: 3601, y: 675, layer: "gg-runes" },
+                { name: "E14", x: 3639, y: 715, layer: "gg-runes" },
+                { name: "E15", x: 3617, y: 824, layer: "gg-runes" },
+                { name: "E16", x: 3789, y: 758, layer: "gg-runes" },
+                { name: "E17", x: 3970, y: 722, layer: "gg-runes" },
+                { name: "E18", x: 4131, y: 751, layer: "gg-runes" },
+                { name: "E19", x: 4095, y: 653, layer: "gg-runes" },
+                { name: "E20", x: 4203, y: 533, layer: "gg-runes" },
+                { name: "E21", x: 4265, y: 485, layer: "gg-runes" },
+                { name: "E22", x: 4272, y: 641, layer: "gg-runes" },
+                { name: "E23", x: 4184, y: 786, layer: "gg-runes" },
+                { name: "E24", x: 4271, y: 750, layer: "gg-runes" },
+                { name: "E25", x: 3556, y: 1055, layer: "gg-runes" },
+                { name: "E26", x: 3469, y: 1165, layer: "gg-runes" },
+                { name: "E27", x: 3625, y: 1144, layer: "gg-runes" },
+                { name: "E28", x: 3707, y: 952, layer: "gg-runes" },
+                { name: "E29", x: 3854, y: 832, layer: "gg-runes" },
+                { name: "E30", x: 3767, y: 1249, layer: "gg-runes" },
+                { name: "E31", x: 3740, y: 1185, layer: "gg-runes" },
+                { name: "E32", x: 3880, y: 1236, layer: "gg-runes" },
+                { name: "E33", x: 3816, y: 1062, layer: "gg-runes" },
+                { name: "E34", x: 3953, y: 1004, layer: "gg-runes" },
+                { name: "E35", x: 4005, y: 884, layer: "gg-runes" },
+                { name: "E36", x: 4020, y: 1154, layer: "gg-runes" },
+                { name: "E37", x: 4031, y: 1331, layer: "gg-runes" },
+                { name: "E38", x: 4141, y: 1299, layer: "gg-runes" },
+                { name: "E39", x: 4153, y: 935, layer: "gg-runes" },
+                { name: "E40", x: 4262, y: 919, layer: "gg-runes" },
+                { name: "E41", x: 4325, y: 1137, layer: "gg-runes" },
+                { name: "E42", x: 4189, y: 1067, layer: "gg-runes" },
+                { name: "E43", x: 3760, y: 1341, layer: "gg-runes" },
+                { name: "E44", x: 3788, y: 1355, layer: "gg-runes" },
+                { name: "E45", x: 3823, y: 1347, layer: "gg-runes" },
+                { name: "E46", x: 3783, y: 1396, layer: "gg-runes" },
+                { name: "E47", x: 3859, y: 1341, layer: "gg-runes" },
+                { name: "E48", x: 3924, y: 1356, layer: "gg-runes" },
+                { name: "E49", x: 3856, y: 1430, layer: "gg-runes" },
+                { name: "E50", x: 3706, y: 1431, layer: "gg-runes" },
+                { name: "E51", x: 3632, y: 1528, layer: "gg-runes" },
+                { name: "E52", x: 3875, y: 1515, layer: "gg-runes" },
+                { name: "E53", x: 3926, y: 1568, layer: "gg-runes" },
+                { name: "E54", x: 3770, y: 1708, layer: "gg-runes" },
+                { name: "E55", x: 3844, y: 1765, layer: "gg-runes" },
+                { name: "E56", x: 3954, y: 1688, layer: "gg-runes" },
+                { name: "E57", x: 4045, y: 1646, layer: "gg-runes" },
+                { name: "E58", x: 4024, y: 1854, layer: "gg-runes" },
+                // S Series
+                { name: "S1", x: 727, y: 3197, layer: "gg-runes" },
+                { name: "S2", x: 764, y: 3114, layer: "gg-runes" },
+                { name: "S3", x: 873, y: 3155, layer: "gg-runes" },
+                { name: "S4", x: 823, y: 3048, layer: "gg-runes" },
+                { name: "S5", x: 1000, y: 3060, layer: "gg-runes" },
+                { name: "S6", x: 903, y: 2829, layer: "gg-runes" },
+                { name: "S7", x: 1070, y: 3315, layer: "gg-runes" },
+                { name: "S8", x: 1057, y: 2642, layer: "gg-runes" },
+                { name: "S9", x: 1157, y: 2538, layer: "gg-runes" },
+                { name: "S10", x: 1210, y: 2682, layer: "gg-runes" },
+                { name: "S11", x: 1365, y: 2708, layer: "gg-runes" },
+                { name: "S12", x: 1166, y: 2915, layer: "gg-runes" },
+                { name: "S13", x: 1339, y: 2922, layer: "gg-runes" },
+                { name: "S14", x: 1464, y: 2644, layer: "gg-runes" },
+                { name: "S15", x: 1491, y: 2527, layer: "gg-runes" },
+                { name: "S16", x: 1532, y: 2599, layer: "gg-runes" },
+                { name: "S17", x: 1582, y: 2695, layer: "gg-runes" },
+                { name: "S18", x: 1592, y: 2891, layer: "gg-runes" },
+                { name: "S19", x: 1518, y: 3032, layer: "gg-runes" },
+                { name: "S20", x: 1442, y: 2943, layer: "gg-runes" },
+                { name: "S21", x: 1775, y: 3143, layer: "gg-runes" },
+                { name: "S22", x: 2157, y: 2832, layer: "gg-runes" },
+                { name: "S23", x: 2195, y: 2830, layer: "gg-runes" },
+                { name: "S24", x: 2220, y: 2861, layer: "gg-runes" },
+                { name: "S25", x: 2179, y: 2902, layer: "gg-runes" },
+                { name: "S26", x: 2221, y: 2888, layer: "gg-runes" },
+                { name: "S27", x: 2237, y: 2973, layer: "gg-runes" },
+                { name: "S28", x: 2012, y: 3246, layer: "gg-runes" },
+                { name: "S29", x: 2183, y: 3145, layer: "gg-runes" },
+                { name: "S30", x: 2336, y: 3128, layer: "gg-runes" },
+                { name: "S31", x: 2203, y: 3260, layer: "gg-runes" },
+                { name: "S32", x: 2317, y: 3318, layer: "gg-runes" },
+                { name: "S33", x: 2150, y: 3423, layer: "gg-runes" },
+                { name: "S34", x: 2302, y: 3481, layer: "gg-runes" },
+                { name: "S35", x: 2426, y: 3352, layer: "gg-runes" },
+                { name: "S36", x: 2631, y: 3474, layer: "gg-runes" },
+                { name: "S37", x: 2732, y: 3384, layer: "gg-runes" },
+                { name: "S38", x: 2855, y: 3336, layer: "gg-runes" },
+                { name: "S39", x: 2986, y: 3695, layer: "gg-runes" },
+                { name: "S40", x: 3054, y: 3480, layer: "gg-runes" },
+                { name: "S41", x: 3059, y: 3411, layer: "gg-runes" },
+                { name: "S42", x: 3078, y: 3497, layer: "gg-runes" },
+                { name: "S43", x: 3122, y: 3489, layer: "gg-runes" },
+                { name: "S44", x: 3164, y: 3422, layer: "gg-runes" },
+                { name: "S45", x: 3209, y: 3386, layer: "gg-runes" },
+                { name: "S46", x: 3258, y: 3343, layer: "gg-runes" },
+                { name: "S47", x: 3268, y: 3521, layer: "gg-runes" },
+                { name: "S48", x: 3285, y: 3735, layer: "gg-runes" },
+                // W Series
+                { name: "W1", x: 686, y: 544, layer: "gg-runes" },
+                { name: "W2", x: 655, y: 733, layer: "gg-runes" },
+                { name: "W3", x: 783, y: 594, layer: "gg-runes" },
+                { name: "W4", x: 830, y: 610, layer: "gg-runes" },
+                { name: "W5", x: 771, y: 743, layer: "gg-runes" },
+                { name: "W6", x: 918, y: 584, layer: "gg-runes" },
+                { name: "W7", x: 981, y: 650, layer: "gg-runes" },
+                { name: "W8", x: 891, y: 793, layer: "gg-runes" },
+                { name: "W9", x: 1027, y: 741, layer: "gg-runes" },
+                { name: "W10", x: 1144, y: 753, layer: "gg-runes" },
+                { name: "W11", x: 476, y: 856, layer: "gg-runes" },
+                { name: "W12", x: 586, y: 995, layer: "gg-runes" },
+                { name: "W13", x: 614, y: 921, layer: "gg-runes" },
+                { name: "W14", x: 689, y: 862, layer: "gg-runes" },
+                { name: "W15", x: 618, y: 1219, layer: "gg-runes" },
+                { name: "W16", x: 722, y: 1183, layer: "gg-runes" },
+                { name: "W17", x: 815, y: 1050, layer: "gg-runes" },
+                { name: "W18", x: 916, y: 926, layer: "gg-runes" },
+                { name: "W19", x: 1037, y: 898, layer: "gg-runes" },
+                { name: "W20", x: 987, y: 1126, layer: "gg-runes" },
+                { name: "W21", x: 1115, y: 997, layer: "gg-runes" },
+                { name: "W22", x: 1145, y: 941, layer: "gg-runes" },
+                { name: "W23", x: 1198, y: 890, layer: "gg-runes" },
+                { name: "W24", x: 1164, y: 1038, layer: "gg-runes" },
+                { name: "W25", x: 1333, y: 987, layer: "gg-runes" },
+                { name: "W26", x: 1201, y: 1223, layer: "gg-runes" },
+                { name: "W27", x: 1349, y: 1167, layer: "gg-runes" },
+                { name: "W28", x: 1425, y: 1045, layer: "gg-runes" },
+                { name: "W29", x: 1574, y: 1062, layer: "gg-runes" },
+                { name: "W30", x: 1653, y: 1021, layer: "gg-runes" },
+                { name: "W31", x: 1787, y: 1005, layer: "gg-runes" },
+                { name: "W32", x: 1959, y: 996, layer: "gg-runes" },
+                { name: "W33", x: 893, y: 1376, layer: "gg-runes" },
+                { name: "W34", x: 957, y: 1569, layer: "gg-runes" },
+                { name: "W35", x: 1041, y: 1399, layer: "gg-runes" },
+                { name: "W36", x: 1097, y: 1353, layer: "gg-runes" },
+                { name: "W37", x: 1195, y: 1351, layer: "gg-runes" },
+                { name: "W38", x: 1254, y: 1454, layer: "gg-runes" },
+                { name: "W39", x: 1326, y: 1384, layer: "gg-runes" },
+                { name: "W40", x: 1371, y: 1273, layer: "gg-runes" },
+                { name: "W41", x: 1410, y: 1193, layer: "gg-runes" },
+                { name: "W42", x: 1429, y: 1266, layer: "gg-runes" },
+                { name: "W43", x: 1491, y: 1317, layer: "gg-runes" },
+                { name: "W44", x: 1581, y: 1384, layer: "gg-runes" },
+                { name: "W45", x: 1673, y: 1259, layer: "gg-runes" },
+                { name: "W46", x: 1720, y: 1119, layer: "gg-runes" },
+                { name: "W47", x: 1927, y: 1059, layer: "gg-runes" },
+                { name: "W48", x: 1949, y: 1182, layer: "gg-runes" },
+                { name: "W49", x: 2328, y: 1273, layer: "gg-runes" },
+                { name: "W50", x: 2336, y: 1095, layer: "gg-runes" },
+                { name: "W51", x: 2460, y: 1159, layer: "gg-runes" },
+                { name: "W52", x: 220, y: 1894, layer: "gg-runes" },
+                { name: "W53", x: 290, y: 2134, layer: "gg-runes" },
+                { name: "W54", x: 330, y: 2034, layer: "gg-runes" },
+                { name: "W55", x: 452, y: 2036, layer: "gg-runes" },
+                { name: "W56", x: 492, y: 2104, layer: "gg-runes" },
+                { name: "W57", x: 529, y: 1905, layer: "gg-runes" },
+                { name: "W58", x: 662, y: 1810, layer: "gg-runes" },
+                { name: "W59", x: 765, y: 1808, layer: "gg-runes" },
+                { name: "W60", x: 961, y: 1811, layer: "gg-runes" },
+                { name: "W61", x: 992, y: 1736, layer: "gg-runes" },
+                { name: "W62", x: 1093, y: 1734, layer: "gg-runes" },
+                { name: "W63", x: 1145, y: 1699, layer: "gg-runes" },
+                { name: "W64", x: 1075, y: 1671, layer: "gg-runes" },
+                { name: "W65", x: 1120, y: 1649, layer: "gg-runes" },
+                { name: "W66", x: 1159, y: 1606, layer: "gg-runes" },
+                { name: "W67", x: 1225, y: 1670, layer: "gg-runes" },
+                { name: "W68", x: 1263, y: 1581, layer: "gg-runes" },
+                { name: "W69", x: 1327, y: 1664, layer: "gg-runes" },
+                { name: "W70", x: 1462, y: 1699, layer: "gg-runes" },
+                { name: "W71", x: 1526, y: 1639, layer: "gg-runes" },
+                { name: "W72", x: 972, y: 2030, layer: "gg-runes" },
+                { name: "W73", x: 1155, y: 1847, layer: "gg-runes" },
+                { name: "W74", x: 1314, y: 1807, layer: "gg-runes" },
+                { name: "W75", x: 1419, y: 1915, layer: "gg-runes" },
+                { name: "W76", x: 1470, y: 1956, layer: "gg-runes" },
+                { name: "W77", x: 1542, y: 1816, layer: "gg-runes" },
+                { name: "W78", x: 1523, y: 1984, layer: "gg-runes" },
+                { name: "W79", x: 1727, y: 1885, layer: "gg-runes" },
+                { name: "W80", x: 1774, y: 1996, layer: "gg-runes" },
+                { name: "W81", x: 1884, y: 1901, layer: "gg-runes" },
+                { name: "W82", x: 1878, y: 1979, layer: "gg-runes" },
+                { name: "W83", x: 1866, y: 2036, layer: "gg-runes" },
+                { name: "W84", x: 1963, y: 1959, layer: "gg-runes" },
+                { name: "W85", x: 1971, y: 2016, layer: "gg-runes" },
+                { name: "W86", x: 2046, y: 1846, layer: "gg-runes" },
+                { name: "W87", x: 2091, y: 1905, layer: "gg-runes" },
+                { name: "W88", x: 2114, y: 2043, layer: "gg-runes" },
+                { name: "W89", x: 961, y: 2154, layer: "gg-runes" },
+                { name: "W90", x: 1038, y: 2297, layer: "gg-runes" },
+                { name: "W91", x: 1166, y: 2231, layer: "gg-runes" },
+                { name: "W92", x: 1202, y: 2372, layer: "gg-runes" },
+                { name: "W93", x: 1331, y: 2240, layer: "gg-runes" },
+                { name: "W94", x: 1385, y: 2163, layer: "gg-runes" },
+                { name: "W95", x: 1381, y: 2126, layer: "gg-runes" },
+                { name: "W96", x: 1346, y: 2041, layer: "gg-runes" },
+                { name: "W97", x: 1419, y: 2090, layer: "gg-runes" },
+                { name: "W98", x: 1469, y: 2129, layer: "gg-runes" },
+                { name: "W99", x: 1527, y: 2142, layer: "gg-runes" },
+                { name: "W100", x: 1589, y: 2146, layer: "gg-runes" },
+                { name: "W101", x: 1534, y: 2249, layer: "gg-runes" },
+                { name: "W102", x: 1614, y: 2257, layer: "gg-runes" },
+                { name: "W103", x: 1450, y: 2329, layer: "gg-runes" },
+                { name: "W104", x: 1518, y: 2333, layer: "gg-runes" },
+                { name: "W105", x: 1598, y: 2337, layer: "gg-runes" },
+                { name: "W106", x: 1600, y: 2438, layer: "gg-runes" },
+                { name: "W107", x: 1673, y: 2122, layer: "gg-runes" },
+                { name: "W108", x: 1811, y: 2163, layer: "gg-runes" },
+                { name: "W109", x: 1780, y: 2295, layer: "gg-runes" },
+                { name: "W110", x: 1907, y: 2259, layer: "gg-runes" },
+                { name: "W112", x: 2145, y: 2249, layer: "gg-runes" },
+                { name: "W113", x: 2184, y: 2118, layer: "gg-runes" },
+                { name: "W114", x: 2241, y: 2389, layer: "gg-runes" },
+                { name: "W115", x: 2231, y: 2612, layer: "gg-runes" },
+                // CC Series
+                { name: "CC1", x: 838, y: 607, layer: "gg-runes" },
+                { name: "CC2", x: 899, y: 595, layer: "gg-runes" },
+                { name: "CC3", x: 894, y: 639, layer: "gg-runes" },
+                { name: "CC4", x: 835, y: 691, layer: "gg-runes" },
+                { name: "CC5", x: 893, y: 691, layer: "gg-runes" },
+                { name: "CC6", x: 912, y: 746, layer: "gg-runes" },
+                { name: "CC7", x: 886, y: 810, layer: "gg-runes" },
+                { name: "CC8", x: 834, y: 806, layer: "gg-runes" },
+                { name: "CC9", x: 908, y: 853, layer: "gg-runes" },
+                { name: "CC10", x: 900, y: 897, layer: "gg-runes" },
+                { name: "CC11", x: 955, y: 882, layer: "gg-runes" },
+                { name: "CC12", x: 954, y: 823, layer: "gg-runes" },
+                { name: "CC13", x: 1026, y: 850, layer: "gg-runes" },
+                { name: "CC14", x: 1036, y: 820, layer: "gg-runes" },
+                { name: "CC15", x: 1016, y: 764, layer: "gg-runes" },
+                { name: "CC16", x: 982, y: 792, layer: "gg-runes" },
+                { name: "CC17", x: 991, y: 672, layer: "gg-runes" },
+                { name: "CC18", x: 962, y: 713, layer: "gg-runes" },
+                { name: "CC19", x: 806, y: 848, layer: "gg-runes" },
+                // X Series
+                { name: "X1", x: 3437, y: 1921, layer: "gg-runes" },
+                { name: "X2", x: 3500, y: 1892, layer: "gg-runes" },
+                { name: "X3", x: 3471, y: 1987, layer: "gg-runes" },
+                { name: "X4", x: 3586, y: 1842, layer: "gg-runes" },
+                { name: "X5", x: 3615, y: 1940, layer: "gg-runes" },
+                { name: "X6", x: 3619, y: 2029, layer: "gg-runes" },
+                { name: "X7", x: 3559, y: 2101, layer: "gg-runes" },
+                { name: "X8", x: 3502, y: 2105, layer: "gg-runes" },
+                { name: "X9", x: 4132, y: 2076, layer: "gg-runes" },
+                { name: "X10", x: 4090, y: 2317, layer: "gg-runes" },
+                { name: "X11", x: 3954, y: 2341, layer: "gg-runes" },
+                { name: "X12", x: 4219, y: 2368, layer: "gg-runes" },
+                { name: "X13", x: 4380, y: 2420, layer: "gg-runes" },
+                { name: "X14", x: 4379, y: 2581, layer: "gg-runes" },
+                { name: "X15", x: 4258, y: 2574, layer: "gg-runes" },
+                { name: "X16", x: 4267, y: 2691, layer: "gg-runes" },
+                { name: "X17", x: 4391, y: 2704, layer: "gg-runes" },
+                { name: "X18", x: 4409, y: 2776, layer: "gg-runes" },
+                { name: "X19", x: 4343, y: 2855, layer: "gg-runes" },
+                { name: "X20", x: 4237, y: 2868, layer: "gg-runes" },
+                { name: "X21", x: 3928, y: 2450, layer: "gg-runes" },
+                { name: "X22", x: 3866, y: 2589, layer: "gg-runes" },
+                { name: "X23", x: 3806, y: 2470, layer: "gg-runes" },
+                { name: "X24", x: 4163, y: 2775, layer: "gg-runes" },
+                { name: "X25", x: 3902, y: 2718, layer: "gg-runes" },
+                { name: "X26", x: 4039, y: 2825, layer: "gg-runes" },
+                { name: "X27", x: 4090, y: 2961, layer: "gg-runes" },
+                { name: "X28", x: 4103, y: 3097, layer: "gg-runes" },
+                { name: "X29", x: 4264, y: 3102, layer: "gg-runes" },
+                { name: "X30", x: 3947, y: 2995, layer: "gg-runes" },
+                { name: "X31", x: 3764, y: 2876, layer: "gg-runes" },
+                { name: "X32", x: 3769, y: 2686, layer: "gg-runes" },
+                { name: "X33", x: 3618, y: 2707, layer: "gg-runes" },
+                { name: "X34", x: 3586, y: 2735, layer: "gg-runes" },
+                { name: "X35", x: 3611, y: 2817, layer: "gg-runes" },
+                { name: "X36", x: 3720, y: 2960, layer: "gg-runes" },
+                { name: "X37", x: 3707, y: 3139, layer: "gg-runes" },
+                { name: "X38", x: 3762, y: 3220, layer: "gg-runes" },
+                { name: "X39", x: 3888, y: 3236, layer: "gg-runes" },
+                { name: "X40", x: 3948, y: 3217, layer: "gg-runes" },
+                { name: "X41", x: 3947, y: 3315, layer: "gg-runes" },
+                { name: "X42", x: 4009, y: 3432, layer: "gg-runes" },
+                { name: "X43", x: 3545, y: 3154, layer: "gg-runes" },
+                { name: "X44", x: 3561, y: 3271, layer: "gg-runes" },
+                { name: "X45", x: 3631, y: 3349, layer: "gg-runes" },
+                { name: "X46", x: 3731, y: 3381, layer: "gg-runes" },
+                { name: "X47", x: 3752, y: 3277, layer: "gg-runes" },
+                { name: "X48", x: 3801, y: 3485, layer: "gg-runes" },
+                { name: "X49", x: 3848, y: 3622, layer: "gg-runes" },
+                { name: "X50", x: 3605, y: 3523, layer: "gg-runes" },
+                { name: "X51", x: 3493, y: 3582, layer: "gg-runes" },
+                { name: "X52", x: 3511, y: 3394, layer: "gg-runes" },
+                { name: "X53", x: 3533, y: 2671, layer: "gg-runes" },
+                { name: "X54", x: 3483, y: 2617, layer: "gg-runes" },
+                { name: "X55", x: 3403, y: 2609, layer: "gg-runes" },
+                { name: "X56", x: 3339, y: 2674, layer: "gg-runes" },
+                { name: "X57", x: 3329, y: 2726, layer: "gg-runes" },
+                { name: "X58", x: 3330, y: 2802, layer: "gg-runes" },
+                { name: "X59", x: 3437, y: 2693, layer: "gg-runes" },
+                { name: "X60", x: 3437, y: 2854, layer: "gg-runes" },
+                { name: "X61", x: 3336, y: 2867, layer: "gg-runes" },
+                { name: "X62", x: 3286, y: 2858, layer: "gg-runes" },
+                { name: "X63", x: 3221, y: 3038, layer: "gg-runes" },
+                { name: "X64", x: 3093, y: 3083, layer: "gg-runes" },
+                { name: "X65", x: 2984, y: 3040, layer: "gg-runes" },
+                { name: "X66", x: 3173, y: 3253, layer: "gg-runes" },
+                { name: "X67", x: 3313, y: 3124, layer: "gg-runes" },
+                { name: "X68", x: 3359, y: 3027, layer: "gg-runes" },
+                { name: "X69", x: 3417, y: 3189, layer: "gg-runes" },
+                { name: "X70", x: 3431, y: 3351, layer: "gg-runes" },
+                { name: "X71", x: 3395, y: 2929, layer: "gg-runes" },
+                { name: "X72", x: 3812, y: 2942, layer: "gg-runes" },
+                { name: "X73", x: 4105, y: 2665, layer: "gg-runes" },
+                { name: "X74", x: 3869, y: 3116, layer: "gg-runes" },
+                { name: "X75", x: 4099, y: 3237, layer: "gg-runes" },
+                // Islands and Special Locations
+                { name: "FS Island", x: 370, y: 314, layer: "gg-runes" },
+                { name: "Syn Island", x: 784, y: 466, layer: "gg-runes" },
+                { name: "CFC Island", x: 1104, y: 296, layer: "gg-runes" },
+                { name: "Yew Island", x: 2790, y: 690, layer: "gg-runes" },
+                { name: "Face Island", x: 917, y: 3343, layer: "gg-runes" },
+                { name: "BB Island", x: 1543, y: 3244, layer: "gg-runes" },
+                { name: "LT Island", x: 3905, y: 3840, layer: "gg-runes" },
+                { name: "Rat Island", x: 4029, y: 3736, layer: "gg-runes" },
+                { name: "NC Island", x: 4359, y: 3101, layer: "gg-runes" },
+                { name: "DTF Island", x: 4139, y: 1444, layer: "gg-runes" },
+                { name: "PEC Island", x: 2349, y: 1574, layer: "gg-runes" },
+                { name: "CoM Island", x: 403, y: 2176, layer: "gg-runes" },
+                { name: "BRA Island", x: 452, y: 1752, layer: "gg-runes" },
+                { name: "GLC Island", x: 212, y: 1657, layer: "gg-runes" },
+                { name: "NEW Island", x: 4189, y: 1834, layer: "gg-runes" },
+                { name: "1CE Island", x: 426, y: 941, layer: "gg-runes" },
+                { name: "SOF Island", x: 3490, y: 3734, layer: "gg-runes" },
+                { name: "DOK Island", x: 2329, y: 297, layer: "gg-runes" },
+                { name: "NKB Island", x: 4308, y: 2243, layer: "gg-runes" },
+                { name: "Evil Island", x: 443, y: 1219, layer: "gg-runes" },
+                { name: "NWO Island", x: 2153, y: 339, layer: "gg-runes" },
+                { name: "RAQ Island", x: 629, y: 1352, layer: "gg-runes" },
+                // Other special locations
+                { name: "Colony", x: 6745, y: 1621, layer: "gg-runes" },
+                { name: "Exit", x: 7257, y: 1173, layer: "gg-runes" },
+                { name: "Burning Lich", x: 7518, y: 1312, layer: "gg-runes" },
+                { name: "Portal Stonegate", x: 7230, y: 1303, layer: "gg-runes" },
+                { name: "Arnold", x: 7382, y: 1125, layer: "gg-runes" },
+                { name: "Stonegate", x: 6778, y: 1266, layer: "gg-runes" },
+                { name: "Maze Tele", x: 7667, y: 1452, layer: "gg-runes" },
+                { name: "Mage Tower", x: 5254, y: 999, layer: "gg-runes" },
+                { name: "Waystar", x: 6807, y: 781, layer: "gg-runes" },
+                { name: "Triple Red", x: 6755, y: 1027, layer: "gg-runes" }
+            ];
+            // Sample POIs for other layers
+            const otherPOIs = [
+                // Witcher Runes - strategic locations
+                { name: 'Witcher Rune Alpha', x: 8000, y: 1500, layer: 'witcher-runes' },
+                { name: 'Mountain Witcher Rune', x: 4000, y: 4800, layer: 'witcher-runes' },
+                // Resources - spread across different regions
+                { name: 'Iron Mine', x: 5000, y: 3600, layer: 'resources' },
+                { name: 'Crystal Cave', x: 8500, y: 2200, layer: 'resources' },
+                { name: 'Gold Deposits', x: 6500, y: 5000, layer: 'resources' },
+                { name: 'Timber Grove', x: 7000, y: 1000, layer: 'resources' },
+                // Dungeons - major locations
+                { name: 'Shadow Dungeon', x: 2500, y: 4500, layer: 'dungeons' },
+                { name: 'Ancient Crypt', x: 9000, y: 3200, layer: 'dungeons' },
+                { name: 'Dragon Lair', x: 5500, y: 5500, layer: 'dungeons' }
+            ];
+            
+            // Combine all POIs
+            const allPOIs = [...dockmasterPOIs, ...ggRunesPOIs, ...otherPOIs];
+            
+            allPOIs.forEach(poi => {
+                const config = layerConfig[poi.layer];
+                const icon = L.divIcon({
+                    className: 'poi-icon',
+                    html: `<div style=\"background: ${config.color}; border: 2px solid white; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 10px;\">${config.icon}</div>`,
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8]
+                });
+                // Flip Y axis for correct placement
+                const marker = L.marker([imageHeight - poi.y, poi.x], { icon: icon });
+                marker.bindPopup(`<div style=\"color: white;\"><strong>${poi.name}</strong><br><small>Layer: ${poi.layer}</small><br><small>X: ${poi.x}, Y: ${poi.y}</small></div>`);
+                marker.addTo(mapLayers[poi.layer]);
+            });
+        }
+        
+        // Sidebar toggle functionality
+        function initSidebarToggle() {
+            const toggleBtn = document.getElementById('toggle-sidebar');
+            const showBtn = document.getElementById('show-sidebar');
+            const sidebar = document.querySelector('.sidebar');
+            const container = document.querySelector('.container');
+            
+            toggleBtn.addEventListener('click', () => {
+                sidebar.classList.add('hidden');
+                container.classList.add('sidebar-hidden');
+                toggleBtn.innerHTML = '❯';
+            });
+            
+            showBtn.addEventListener('click', () => {
+                sidebar.classList.remove('hidden');
+                container.classList.remove('sidebar-hidden');
+                toggleBtn.innerHTML = '❮';
+            });
+        }
+        
+        // Initialize sidebar toggle when page loads
+        document.addEventListener('DOMContentLoaded', initSidebarToggle);
+    </script>
+</body>
+</html>
