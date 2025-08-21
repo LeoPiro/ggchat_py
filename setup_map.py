@@ -35,13 +35,13 @@ def setup_map():
    python server.py
 
 4. Access the map at:
-   http://172.105.151.47:8080/map
+   http://45.79.137.244:8888/map
 
 5. To add more layers or points of interest, edit the map_client.html file
    and modify the samplePOIs array and layerConfig object.
 
 Current server setup:
-- Server URL: 172.105.151.47:8080
+- Server URL: 45.79.137.244:8888
 - Map endpoint: /map
 - WebSocket endpoint: /map (for real-time pings)
 
@@ -87,7 +87,7 @@ Layer configuration:
     print("\n🚀 Setup Status:")
     print("1. Copy ggmap.png to this directory")
     print("2. Run: python server.py")
-    print("3. Navigate to: http://172.105.151.47:8080/map")
+    print("3. Navigate to: http://45.79.137.244:8888/map")
     print("4. Share the URL with your guild members!")
     
     print("\n🎮 Map Features:")

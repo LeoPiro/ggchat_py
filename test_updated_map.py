@@ -27,7 +27,7 @@ async def test_updated_map():
     print("   - Proper map scaling and bounds")
     
     # Test WebSocket connection
-    uri = "ws://localhost:8080/map"
+    uri = "ws://localhost:8888/map"
     try:
         print(f"\n🔌 Testing WebSocket connection to {uri}...")
         async with websockets.connect(uri) as websocket:
@@ -63,7 +63,7 @@ async def test_updated_map():
     
     print("\n✅ All tests completed successfully!")
     print("\n📋 Usage Instructions:")
-    print("1. Open http://localhost:8080/map in your browser")
+    print("1. Open http://localhost:8888/map in your browser")
     print("2. Enter your username when prompted")
     print("3. Hold Ctrl and click anywhere on the map to ping")
     print("4. Listen for the ping sound effect")

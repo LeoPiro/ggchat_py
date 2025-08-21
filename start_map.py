@@ -60,9 +60,9 @@ def check_environment():
 def start_server():
     """Start the map server"""
     print("🚀 Starting GG Guild Map Server...")
-    print("📍 Server will be available at: http://172.105.151.47:8080/map")
-    print("🔗 Direct map access: http://172.105.151.47:8080/map")
-    print("💬 Chat integration: http://172.105.151.47:8080/")
+    print("📍 Server will be available at: http://45.79.137.244:8888/map")
+    print("🔗 Direct map access: http://45.79.137.244:8888/map")
+    print("💬 Chat integration: http://45.79.137.244:8888/")
     print("\n⚡ Starting server... (Press Ctrl+C to stop)")
     
     try:

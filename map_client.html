@@ -401,7 +401,7 @@
 
     <script>
         // Configuration
-        const SERVER_URL = '172.105.151.47:8080';
+        const SERVER_URL = '45.79.137.244:8888';
         const MAP_IMAGE_PATH = '/static/ggmap.png';
         
         // Global variables
@@ -495,9 +495,9 @@
             if (pingSoundsEnabled) {
                 try {
                     pingAudio.currentTime = 0; // Reset to start
-                    pingAudio.play().catch(e => console.log('Could not play ping sound:', e));
+                    pingAudio.play().catch(e => {});
                 } catch (e) {
-                    console.log('Could not play ping sound:', e);
+                    // Sound play failed silently
                 }
             }
             
@@ -519,16 +519,16 @@
                 if (pingSoundsEnabled) {
                     try {
                         pingAudio.currentTime = 0; // Reset to start
-                        pingAudio.play().catch(e => console.log('Could not play ping sound:', e));
+                        pingAudio.play().catch(e => {});
                     } catch (e) {
-                        console.log('Could not play ping sound:', e);
+                        // Sound play failed silently
                     }
                 }
                 
                 // Snap to ping if enabled
                 const snapToPing = document.getElementById('snap-to-ping').checked;
                 if (snapToPing) {
-                    map.setView([lat, lng], -1, {
+                    map.setView([lat, lng], -5, {
                         animate: true,
                         duration: 1.0
                     });
@@ -666,15 +666,21 @@
             statusEl.textContent = 'Connecting...';
             statusEl.className = 'connection-status connecting';
             
-            // For now, we'll simulate a connection and user authentication
-            // In a real implementation, you'd integrate with your Discord OAuth flow
-            currentUser = prompt('Enter your guild username:') || 'Anonymous';
+            // Check for username in URL parameters first
+            const urlParams = new URLSearchParams(window.location.search);
+            const usernameFromUrl = urlParams.get('username');
+            
+            // Use URL parameter if available, otherwise prompt
+            if (usernameFromUrl && usernameFromUrl.trim()) {
+                currentUser = usernameFromUrl.trim();
+            } else {
+                currentUser = prompt('Enter your guild username:') || 'Anonymous';
+            }
             
             try {
                 websocket = new WebSocket(`ws://${SERVER_URL}/map`);
                 
                 websocket.onopen = function(event) {
-                    console.log('Connected to map server');
                     statusEl.textContent = 'Connected';
                     statusEl.className = 'connection-status connected';
                     
@@ -691,7 +697,6 @@
                 };
                 
                 websocket.onclose = function(event) {
-                    console.log('Disconnected from map server');
                     statusEl.textContent = 'Disconnected';
                     statusEl.className = 'connection-status disconnected';
                     
@@ -700,13 +705,11 @@
                 };
                 
                 websocket.onerror = function(error) {
-                    console.error('WebSocket error:', error);
                     statusEl.textContent = 'Connection Error';
                     statusEl.className = 'connection-status disconnected';
                 };
                 
             } catch (error) {
-                console.error('Failed to connect:', error);
                 statusEl.textContent = 'Connection Failed';
                 statusEl.className = 'connection-status disconnected';
                 
@@ -721,6 +724,11 @@
                     if (data.user !== currentUser) {
                         addPingToMap(data, true); // fromOtherUser = true
                     }
+                    break;
+                    
+                case 'chat_notification':
+                    // Display ping notification in map interface
+                    showChatNotification(data.message);
                     break;
                     
                 case 'user_list':
@@ -740,7 +748,7 @@
                     break;
                     
                 default:
-                    console.log('Unknown message type:', data.type);
+                    // Unknown message type - ignore silently
             }
         }
         
@@ -766,6 +774,38 @@
                 userPings.get(user).forEach(marker => map.removeLayer(marker));
                 userPings.delete(user);
             }
+        }
+        
+        function showChatNotification(message) {
+            // Create a temporary notification element
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 80px;
+                right: 20px;
+                background: rgba(0, 0, 0, 0.8);
+                color: #fff;
+                padding: 12px 20px;
+                border-radius: 5px;
+                font-size: 14px;
+                z-index: 2000;
+                max-width: 300px;
+                word-wrap: break-word;
+                border: 1px solid #555;
+            `;
+            notification.textContent = message;
+            
+            // Add to page
+            document.body.appendChild(notification);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 5000);
+            
+            console.log('[Map Chat]', message);
         }
         
         // Initialize everything when page loads
@@ -1332,7 +1372,7 @@
                 const config = layerConfig[poi.layer];
                 const icon = L.divIcon({
                     className: 'poi-icon',
-                    html: `<div style=\"background: ${config.color}; border: 2px solid white; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 10px;\">${config.icon}</div>`,
+                    html: `<div style=\"background: ${config.color}; border: 2px solid #333; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 10px;\">${config.icon}</div>`,
                     iconSize: [16, 16],
                     iconAnchor: [8, 8]
                 });

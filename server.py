@@ -20,7 +20,7 @@ CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET")
 GUILD_ID      = os.environ.get("DISCORD_GUILD_ID")
 CHANNEL_ID    = int(os.environ.get("DISCORD_CHANNEL_ID", "0"))
 BOT_TOKEN     = os.environ.get("DISCORD_BOT_TOKEN")
-REDIRECT_URI  = os.environ.get("REDIRECT_URI", "http://localhost:8080/callback")
+REDIRECT_URI  = os.environ.get("REDIRECT_URI", "http://localhost:8888/callback")
 JWT_SECRET    = os.environ.get("JWT_SECRET", secrets.token_urlsafe(32))
 
 # Check if Discord integration is enabled
@@ -72,7 +72,6 @@ if DISCORD_ENABLED:
     async def callback(request: Request):
         code  = request.query_params.get("code")
         state = request.query_params.get("state")
-        print(f"[DEBUG] Received code: {code}, state: {state}")
 
         if state not in oauth_states:
             return HTMLResponse("Invalid state", status_code=400)
@@ -91,8 +90,6 @@ if DISCORD_ENABLED:
                 "https://discord.com/api/oauth2/token",
                 data=data, headers=headers
             )
-            print(f"[DEBUG] Token response status: {token_resp.status_code}")
-            print(f"[DEBUG] Token response body: {token_resp.text}")
             token_json = token_resp.json()
             access_token = token_json.get("access_token")
 
@@ -106,15 +103,12 @@ if DISCORD_ENABLED:
             )
             user = user_resp.json()
             user_id = user.get("id")
-            print(f"[DEBUG] User response: {user_resp.status_code}, {user}")
 
             # ✅ Use bot token for member check
             member_resp = await client.get(
                 f"https://discord.com/api/guilds/{GUILD_ID}/members/{user_id}",
                 headers={"Authorization": f"Bot {BOT_TOKEN}"}
             )
-            print(f"[DEBUG] Member check status: {member_resp.status_code}")
-            print(f"[DEBUG] Member check body: {member_resp.text}")
 
         if member_resp.status_code != 200:
             print("[!] Member check failed — user is not in the guild or bot lacks permissions.")
@@ -250,7 +244,7 @@ async def map_websocket_endpoint(websocket: WebSocket):
                             map_connections.discard(conn)
     
     except Exception as e:
-        print(f"[DEBUG] Map WebSocket error: {e}")
+        pass  # Connection closed
     finally:
         map_connections.discard(websocket)
         
@@ -279,15 +273,11 @@ if DISCORD_ENABLED and bot:
 
     @bot.event
     async def on_message(message):
-        print(f"[DEBUG] Received message from {message.author}: {message.content}")
-
         # Skip messages from the GGCHAT bot itself
         if message.author.id == bot.user.id:
-            print("[DEBUG] Ignoring GGCHAT bot message")
             return
 
         if message.channel.id != CHANNEL_ID:
-            print(f"[DEBUG] Ignoring message from different channel: {message.channel.id}")
             return
 
         msg = f"[{message.author.display_name}] {message.content}"
@@ -300,7 +290,7 @@ if DISCORD_ENABLED and bot:
 
 # === MAIN ENTRY ===
 async def main():
-    config = uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="info")
+    config = uvicorn.Config(app, host="0.0.0.0", port=8888, log_level="info")
     server = uvicorn.Server(config)
 
     tasks = [server.serve()]

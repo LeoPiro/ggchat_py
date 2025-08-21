@@ -3,6 +3,7 @@ import irc3
 import threading
 import tkinter as tk
 from tkinter import scrolledtext
+import os
 
 class IRCGUI:
     def __init__(self):
@@ -16,6 +17,13 @@ class IRCGUI:
         self.root.geometry("800x500")
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
         self.pinned = False
+        
+        # Add icon if available
+        try:
+            if os.path.exists("gg_fUv_icon.ico"):
+                self.root.iconbitmap("gg_fUv_icon.ico")
+        except:
+            pass
 
         top = tk.Frame(self.root)
         top.pack(fill=tk.X)

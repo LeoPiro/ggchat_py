@@ -10,7 +10,7 @@ import time
 
 async def test_map_connection():
     """Test connection to the map WebSocket endpoint"""
-    uri = "ws://172.105.151.47:8080/map"
+    uri = "ws://45.79.137.244:8888/map"
     
     try:
         print("🔌 Attempting to connect to map server...")
@@ -48,7 +48,7 @@ async def test_map_connection():
             
     except Exception as e:
         print(f"❌ Failed to connect to map server: {e}")
-        print("💡 Make sure your server is running on 172.105.151.47:8080")
+        print("💡 Make sure your server is running on 45.79.137.244:8888")
 
 def test_local_files():
     """Test if local files are properly set up"""
@@ -90,5 +90,5 @@ if __name__ == "__main__":
     
     print("\n🎯 Test Summary:")
     print("- If all tests pass, your map should be accessible at:")
-    print("  http://172.105.151.47:8080/map")
+    print("  http://45.79.137.244:8888/map")
     print("- Share this URL with your guild members!")
