@@ -4,18 +4,58 @@ from tkinter import messagebox
 from tkinter import ttk, colorchooser
 import tkinter.font as tkfont
 import threading
-import json, os, sys, time, webbrowser, requests, base64
+import json, os, sys, time, webbrowser, requests, base64, subprocess, tempfile
 from websocket import WebSocketApp
-from playsound import playsound
 import re
 from datetime import datetime
+import queue
+import concurrent.futures
 
-CURRENT_VERSION = "1.0.0"
+# Import playsound with fallback
+try:
+    from playsound import playsound
+    PLAYSOUND_AVAILABLE = True
+except ImportError:
+    PLAYSOUND_AVAILABLE = False
+    def playsound(*args, **kwargs):
+        pass  # No-op fallback
+
+# Import winsound for Windows-native audio (more reliable)
+try:
+    import winsound
+    WINSOUND_AVAILABLE = True
+except ImportError:
+    WINSOUND_AVAILABLE = False
+
+try:
+    import webview
+    WEBVIEW_AVAILABLE = True
+except ImportError:
+    WEBVIEW_AVAILABLE = False
+
+try:
+    # Check Python version first before importing CEF
+    import sys
+    if sys.version_info >= (3, 13):
+        CEF_AVAILABLE = False
+    else:
+        from cefpython3 import cefpython as cef
+        CEF_AVAILABLE = True
+except ImportError:
+    CEF_AVAILABLE = False
+except Exception as e:
+    CEF_AVAILABLE = False
+
+CURRENT_VERSION = "2.0.3"
 CONFIG_FILE     = "chat_config.json"
 SERVER_URL      = "http://45.79.137.244:8800".rstrip("/")
 ICON_FILE       = "gg_fUv_icon.ico"
 ALERT_FILENAME  = "alert.wav"
-NOTIFY_FILENAME = "notify.mp3"
+NOTIFY_FILENAME = "notify.wav"
+
+# Check if running from PyInstaller bundle
+def is_frozen():
+    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
 
 # UI Colors
 BG_COLOR      = "#1e1e1e"
@@ -23,6 +63,80 @@ FG_COLOR      = "#ffffff"
 ENTRY_BG      = "#2b2b2b"
 BUTTON_BG     = "#3a3a3a"
 BUTTON_ACTIVE = "#555555"
+
+class SoundManager:
+    """Robust sound manager with proper resource handling"""
+    def __init__(self):
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="SoundPlayer")
+        self.sound_cache = {}
+        self._prepare_sounds()
+    
+    def _prepare_sounds(self):
+        """Pre-load and validate sound file paths"""
+        try:
+            base_path = getattr(sys, '_MEIPASS', os.path.abspath('.'))
+            self.sound_cache['notify'] = os.path.join(base_path, NOTIFY_FILENAME)
+            self.sound_cache['alert'] = os.path.join(base_path, ALERT_FILENAME)
+            
+            # Validate files exist
+            for sound_type, path in self.sound_cache.items():
+                if not os.path.exists(path):
+                    print(f"Warning: Sound file not found: {path}")
+                    
+        except Exception as e:
+            print(f"Sound initialization error: {e}")
+    
+    def play_sound(self, sound_type):
+        """Play sound with proper error handling and resource management"""
+        if not PLAYSOUND_AVAILABLE:
+            return
+            
+        if sound_type not in self.sound_cache:
+            return
+            
+        sound_path = self.sound_cache[sound_type]
+        if not os.path.exists(sound_path):
+            return
+        
+        # Submit to thread pool instead of creating new threads
+        try:
+            future = self.executor.submit(self._play_sound_safe, sound_path)
+            # Don't block, but handle result to prevent resource leaks
+            future.add_done_callback(self._sound_complete)
+        except Exception as e:
+            print(f"Sound playback error: {e}")
+    
+    def _play_sound_safe(self, sound_path):
+        """Thread-safe sound playback with error handling"""
+        try:
+            # Try Windows-native winsound first (more reliable)
+            if WINSOUND_AVAILABLE:
+                winsound.PlaySound(sound_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                return True
+            elif PLAYSOUND_AVAILABLE:
+                playsound(sound_path, block=True)
+                return True
+            else:
+                print("No sound library available")
+                return False
+        except Exception as e:
+            # Log error but don't crash
+            print(f"Sound playback error: {e}")
+            return False
+    
+    def _sound_complete(self, future):
+        """Callback for completed sound playback"""
+        try:
+            result = future.result(timeout=1)  # Quick timeout
+        except Exception:
+            pass  # Ignore completion errors
+    
+    def cleanup(self):
+        """Clean shutdown of sound manager"""
+        try:
+            self.executor.shutdown(wait=False)
+        except Exception:
+            pass
 
 def _decode_jwt(token: str) -> dict:
     try:
@@ -38,10 +152,13 @@ class ChatClient:
         self.gui   = gui
         self.token = token
         self.ws    = None
+        self.sound_manager = SoundManager()  # Initialize sound manager
 
     def start(self):
         scheme = "wss" if SERVER_URL.startswith("https") else "ws"
         host   = SERVER_URL.split("://", 1)[1]
+        
+        # Main chat WebSocket (requires authentication)
         ws_url = f"{scheme}://{host}/ws?token={self.token}"
         self.ws = WebSocketApp(
             ws_url,
@@ -73,14 +190,23 @@ class ChatClient:
             self.ws.send(msg)
 
     def on_message(self, ws, message):
+        # Play notification sound using robust sound manager
         if self.gui.notify_var.get():
-            notify_path = os.path.join(getattr(sys, '_MEIPASS', os.path.abspath('.')), NOTIFY_FILENAME)
-            threading.Thread(target=playsound, args=(notify_path,), daemon=True).start()
+            self.sound_manager.play_sound('notify')
+            
+        # Check for alert keywords and play alert sound
         text = message.split("]", 1)[-1]
         if self.gui.alert_var.get() and re.search(r"\balert\b", text, re.IGNORECASE):
-            alert_path = os.path.join(getattr(sys, '_MEIPASS', os.path.abspath('.')), ALERT_FILENAME)
-            threading.Thread(target=playsound, args=(alert_path,), daemon=True).start()
+            self.sound_manager.play_sound('alert')
+            
         self.gui.append_text(message)
+    
+    def cleanup(self):
+        """Clean shutdown of client resources"""
+        if hasattr(self, 'sound_manager'):
+            self.sound_manager.cleanup()
+        if self.ws:
+            self.ws.close()
 
 class ChatGui:
     def __init__(self, master):
@@ -101,9 +227,14 @@ class ChatGui:
         self.alert_var  = tk.BooleanVar(value=self.config.get("sound_alerts", True))
 
         master.title("GG Chat")
-        master.geometry("800x300")
+        # Restore saved window geometry or use default
+        saved_geometry = self.config.get("window_geometry", "800x300")
+        master.geometry(saved_geometry)
         master.configure(bg=BG_COLOR)
         master.bind('<F1>', lambda e: self.on_send(custom="[!ALERT!]"))
+        
+        # Set up close handler to save config on exit
+        master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         content = tk.Frame(master, bg=BG_COLOR)
         content.pack(fill=tk.BOTH, expand=True)
@@ -128,6 +259,9 @@ class ChatGui:
         self.pin_btn.pack(side=tk.RIGHT, padx=5)
 
         tk.Button(top, text="Send Alert!", command=lambda: self.on_send(custom="[!ALERT!]"),
+                  bg=BUTTON_BG, fg=FG_COLOR, activebackground=BUTTON_ACTIVE).pack(side=tk.RIGHT, padx=5)
+
+        tk.Button(top, text="GG Map", command=self.open_map_window,
                   bg=BUTTON_BG, fg=FG_COLOR, activebackground=BUTTON_ACTIVE).pack(side=tk.RIGHT, padx=5)
 
         chat_wrapper = tk.Frame(content, bg=BG_COLOR)
@@ -200,11 +334,11 @@ class ChatGui:
             # Insert timestamp
             self.text_area.insert("end", f"[{timestamp}] ")
 
-            # Insert name with random color tag
+            # Insert name with user color tag
             name_tag = f"user_{sender}"
             if name_tag not in self.text_area.tag_names():
-                rand_color = f"#{random.randint(0, 0xFFFFFF):06x}"
-                self.text_area.tag_configure(name_tag, foreground=rand_color, font=("Segoe UI", 13, "bold"))
+                # Use the custom others color instead of random color
+                self.text_area.tag_configure(name_tag, foreground=self.custom_others_color, font=("Segoe UI", 13, "bold"))
             self.text_area.insert("end", f"[{sender}]", name_tag)
 
             # Insert message with custom message color
@@ -260,6 +394,12 @@ class ChatGui:
             if color_code:
                 self.custom_others_color = color_code
                 self.text_area.tag_configure("others_msg", foreground=color_code)
+                
+                # Update all existing user tags to use the new color
+                for tag in self.text_area.tag_names():
+                    if tag.startswith("user_"):
+                        self.text_area.tag_configure(tag, foreground=color_code)
+                
                 self.config["others_msg_color"] = color_code
                 self.save_config()
 
@@ -278,6 +418,518 @@ class ChatGui:
             self.text_area.tag_configure(f"user_{tag}", font=new_font + ("bold",))
         self.config["font_size"] = size
         self.save_config()
+
+    def open_map_window(self):
+        """Open the GG Map in an integrated window"""
+        if not self.username:
+            messagebox.showwarning("No Username", "Please login first before opening the map.")
+            return
+            
+        # Check if map window already exists
+        if hasattr(self, 'map_window') and self.map_window and hasattr(self.map_window, 'winfo_exists'):
+            try:
+                if self.map_window.winfo_exists():
+                    self.map_window.lift()
+                    self.map_window.focus_force()
+                    return
+            except:
+                pass
+        
+        try:
+            if CEF_AVAILABLE:
+                try:
+                    self.create_cef_window()
+                    return
+                except Exception as cef_error:
+                    pass
+            
+            if WEBVIEW_AVAILABLE:
+                # Use webview for integrated experience
+                map_url = f"http://45.79.137.244:8888/map?username={self.username}"
+                
+                # Check if webview window is already open
+                if hasattr(self, '_webview_process') and self._webview_process and self._webview_process.poll() is None:
+                    messagebox.showinfo("Map Already Open", "The GG Map window is already open.")
+                    return
+                
+                try:
+                    # Handle differently if running from compiled .exe
+                    if is_frozen():
+                        # For compiled executable, use separate webview launcher process
+                        # This mimics the development subprocess behavior
+                        import subprocess
+                        
+                        # Path to the webview launcher executable (should be in same directory)
+                        script_dir = os.path.dirname(sys.executable) if is_frozen() else os.path.dirname(os.path.abspath(__file__))
+                        launcher_path = os.path.join(script_dir, "webview_launcher.exe")
+                        
+                        # Check if webview process is already running
+                        if hasattr(self, '_webview_process') and self._webview_process and self._webview_process.poll() is None:
+                            messagebox.showinfo("Map Already Open", "The GG Map window is already open.")
+                            return
+                        
+                        # Check if launcher exists
+                        if os.path.exists(launcher_path):
+                            try:
+                                # Start webview launcher in separate process (hidden, no console)
+                                self._webview_process = subprocess.Popen([
+                                    launcher_path,
+                                    map_url,
+                                    self.username
+                                ], 
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL
+                                )
+                                
+                                # No confirmation dialog - just open silently
+                                return
+                                
+                            except Exception as launcher_error:
+                                print(f"Launcher error: {launcher_error}")
+                                # Fall through to threading approach
+                        
+                        # Fallback to threading if launcher not found
+                        import threading
+                        
+                        def create_webview_window():
+                            """Fallback webview in thread"""
+                            try:
+                                import webview
+                                import os
+                                
+                                os.environ['WEBVIEW_ALLOW_HTTP'] = '1'
+                                os.environ['WEBVIEW_DISABLE_SECURITY'] = '1'
+                                
+                                webview.create_window(
+                                    title=f"GG Map - {self.username}",
+                                    url=map_url,
+                                    width=1200,
+                                    height=800,
+                                    resizable=True,
+                                    on_top=False
+                                )
+                                webview.start(debug=False, private_mode=False)
+                                        
+                            except Exception as e:
+                                print(f"Webview thread error: {e}")
+                                import webbrowser
+                                webbrowser.open(map_url)
+                        
+                        threading.Thread(target=create_webview_window, daemon=True).start()
+                        
+                    else:
+                        # Original subprocess approach for development
+                        import subprocess
+                        import tempfile
+                        
+                        # Enhanced pywebview script with HTTP handling
+                        webview_script = f'''
+import webview
+import sys
+import os
+
+def main():
+    try:
+        # Set aggressive environment variables before any imports
+        os.environ['WEBVIEW_ALLOW_HTTP'] = '1'
+        os.environ['WEBVIEW_DISABLE_SECURITY'] = '1'
+        os.environ['WEBVIEW_PRIVATE_MODE'] = '0'
+        os.environ['WEBVIEW_INCOGNITO'] = '0'
+        os.environ['CHROME_ARGS'] = '--disable-web-security --allow-running-insecure-content --disable-features=VizDisplayCompositor --ignore-certificate-errors --allow-http'
+        
+        # Method 1: Try Edge WebView2 (usually better with HTTP)
+        try:
+            webview.create_window(
+                title="GG Map - {self.username}",
+                url="{map_url}",
+                width=1200,
+                height=800,
+                resizable=True,
+                on_top=False
+            )
+            webview.start(debug=False, gui="edgehtml", private_mode=False)
+            
+        except Exception as e1:
+            # Method 2: Try with explicit Chromium args
+            try:
+                webview.create_window(
+                    title="GG Map - {self.username}",
+                    url="{map_url}",
+                    width=1200,
+                    height=800,
+                    resizable=True
+                )
+                webview.start(debug=False, private_mode=False)
+                
+            except Exception as e2:
+                # Method 3: Try basic start
+                try:
+                    webview.create_window(
+                        title="GG Map - {self.username}",
+                        url="{map_url}",
+                        width=1200,
+                        height=800
+                    )
+                    webview.start()
+                    
+                except Exception as e3:
+                    import traceback
+                    traceback.print_exc()
+                    sys.exit(1)
+            
+    except Exception as e:
+        print(f"Webview initialization failed: {{e}}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+'''
+                        
+                        # Write script to temporary file
+                        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+                            f.write(webview_script)
+                            script_path = f.name
+                        
+                        # Get python executable path
+                        python_exe = sys.executable
+                        
+                        # Start webview in separate process
+                        self._webview_process = subprocess.Popen([python_exe, script_path])
+                        
+                        # Clean up temp file after a delay
+                        def cleanup_temp_file():
+                            try:
+                                os.unlink(script_path)
+                            except Exception as e:
+                                pass
+                        
+                        self.master.after(5000, cleanup_temp_file)
+                    
+                except Exception as webview_error:
+                    import traceback
+                    traceback.print_exc()
+                    self.create_enhanced_map_window()
+            else:
+                # Fallback to enhanced browser launcher
+                self.create_enhanced_map_window()
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Failed to open map: {str(e)}")
+            # Fallback to browser
+            try:
+                import webbrowser
+                map_url = f"http://45.79.137.244:8888/map?username={self.username}"
+                webbrowser.open(map_url)
+            except:
+                pass
+
+    def create_cef_window(self):
+        """Create a CEF-based integrated browser window"""
+        map_url = f"http://45.79.137.244:8888/map?username={self.username}"
+        
+        # Create CEF window in a separate process
+        import subprocess
+        import tempfile
+        
+        cef_script = f'''
+import sys
+import tkinter as tk
+from cefpython3 import cefpython as cef
+import threading
+import os
+
+def main():
+    try:
+        # Initialize CEF with settings that allow HTTP
+        sys.excepthook = cef.ExceptHook  # To shutdown all CEF processes on error
+        
+        settings = {{
+            "debug": False,
+            "log_severity": cef.LOGSEVERITY_INFO,
+            "log_file": "",
+            "multi_threaded_message_loop": False,
+            "auto_zooming": "system_dpi",
+            "ignore_certificate_errors": True,
+            "ignore_ssl_errors": True,
+            "disable_web_security": True,
+            "allow_running_insecure_content": True,
+        }}
+        
+        cef.Initialize(settings)
+        
+        # Create window
+        root = tk.Tk()
+        root.title("GG Map - {self.username}")
+        root.geometry("1200x800")
+        root.configure(bg="#1e1e1e")
+        
+        # Add icon if available
+        try:
+            if os.path.exists(ICON_FILE):
+                root.iconbitmap(ICON_FILE)
+        except:
+            pass
+        
+        # Create browser frame
+        browser_frame = tk.Frame(root, bg="#1e1e1e")
+        browser_frame.pack(fill=tk.BOTH, expand=tk.TRUE)
+        
+        window_info = cef.WindowInfo()
+        window_info.SetAsChild(browser_frame.winfo_id(), [0, 0, 1200, 800])
+        
+        browser = cef.CreateBrowserSync(
+            window_info,
+            url="{map_url}"
+        )
+        
+        # Message loop
+        def message_loop():
+            cef.MessageLoopWork()
+            root.after(10, message_loop)
+            
+        def on_closing():
+            browser.CloseBrowser(True)
+            cef.Shutdown()
+            root.destroy()
+            
+        root.protocol("WM_DELETE_WINDOW", on_closing)
+        root.after(10, message_loop)
+        root.mainloop()
+        
+    except Exception as e:
+        print(f"CEF Error: {{e}}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+'''
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(cef_script)
+            script_path = f.name
+        
+        python_exe = sys.executable
+        self._cef_process = subprocess.Popen([python_exe, script_path])
+        
+        # Clean up temp file after delay
+        def cleanup_cef_file():
+            try:
+                os.unlink(script_path)
+            except Exception as e:
+                pass
+        
+        self.master.after(5000, cleanup_cef_file)
+
+    def create_enhanced_map_window(self):
+        """Create an enhanced map window that opens browser with better integration"""
+        self.map_window = tk.Toplevel(self.master)
+        self.map_window.title(f"GG Map - {self.username}")
+        self.map_window.configure(bg=BG_COLOR)
+        self.map_window.geometry("500x350")
+        self.map_window.resizable(True, True)
+        
+        # Add icon if available
+        try:
+            if os.path.exists(ICON_FILE):
+                self.map_window.iconbitmap(ICON_FILE)
+        except:
+            pass
+        
+        main_frame = tk.Frame(self.map_window, bg=BG_COLOR)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Title with map icon
+        title_frame = tk.Frame(main_frame, bg=BG_COLOR)
+        title_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        title_label = tk.Label(title_frame, text="🗺️ GG Guild Map", 
+                              font=("Segoe UI", 18, "bold"), 
+                              bg=BG_COLOR, fg="#ffd700")
+        title_label.pack()
+        
+        subtitle_label = tk.Label(title_frame, text="Guild Coordination & Ping System", 
+                                 font=("Segoe UI", 11), 
+                                 bg=BG_COLOR, fg="#cccccc")
+        subtitle_label.pack(pady=(5, 0))
+        
+        # Status info
+        info_frame = tk.Frame(main_frame, bg=ENTRY_BG, relief=tk.RAISED, bd=2)
+        info_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        status_text = f"✅ Connected as: {self.username}"
+        status_label = tk.Label(info_frame, text=status_text,
+                               font=("Segoe UI", 12, "bold"),
+                               bg=ENTRY_BG, fg="#00ff00", pady=10)
+        status_label.pack()
+        
+        # Quick launch button
+        map_url = f"http://45.79.137.244:8888/map?username={self.username}"
+        
+        launch_btn = tk.Button(main_frame, text="🚀 Launch GG Map in Browser", 
+                              command=lambda: self.launch_map_browser(map_url),
+                              bg="#4CAF50", fg="white", 
+                              activebackground="#45a049",
+                              font=("Segoe UI", 14, "bold"),
+                              relief=tk.RAISED, bd=3, pady=15)
+        launch_btn.pack(fill=tk.X, pady=(0, 15))
+        
+        # Features list
+        features_frame = tk.Frame(main_frame, bg=BG_COLOR)
+        features_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        features_title = tk.Label(features_frame, text="🎯 Map Features:",
+                                 font=("Segoe UI", 12, "bold"),
+                                 bg=BG_COLOR, fg=FG_COLOR)
+        features_title.pack(anchor="w")
+        
+        features = [
+            "• Click anywhere to place pings",
+            "• See other guild members' pings in real-time", 
+            "• Auto-zoom to new pings",
+            "• Sound notifications for new pings",
+            "• Username labels above each ping"
+        ]
+        
+        for feature in features:
+            feature_label = tk.Label(features_frame, text=feature,
+                                   font=("Segoe UI", 10),
+                                   bg=BG_COLOR, fg="#cccccc")
+            feature_label.pack(anchor="w", padx=(10, 0))
+        
+        # Bottom buttons
+        button_frame = tk.Frame(main_frame, bg=BG_COLOR)
+        button_frame.pack(fill=tk.X, pady=(15, 0))
+        
+        copy_btn = tk.Button(button_frame, text="📋 Copy URL", 
+                            command=lambda: self.copy_to_clipboard(map_url),
+                            bg=BUTTON_BG, fg=FG_COLOR, 
+                            activebackground=BUTTON_ACTIVE,
+                            font=("Segoe UI", 10))
+        copy_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        close_btn = tk.Button(button_frame, text="✖️ Close", 
+                             command=self.map_window.destroy,
+                             bg="#f44336", fg="white", 
+                             activebackground="#d32f2f",
+                             font=("Segoe UI", 10))
+        close_btn.pack(side=tk.RIGHT)
+        
+        # Auto-focus and bring to front
+        self.map_window.lift()
+        self.map_window.focus_force()
+        
+    def launch_map_browser(self, url):
+        """Launch map in browser and close the launcher window"""
+        try:
+            webbrowser.open(url)
+            # Show success message
+            success_label = tk.Label(self.map_window, text="✅ Map opened in browser!",
+                                   font=("Segoe UI", 10, "bold"),
+                                   bg=BG_COLOR, fg="#00ff00")
+            success_label.pack(pady=5)
+            
+            # Auto-close after 2 seconds
+            self.master.after(2000, self.map_window.destroy)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open browser: {str(e)}")
+
+    def create_tkinter_map_window(self):
+        """Create a Tkinter window with instructions to manually navigate to the map"""
+        self.map_window = tk.Toplevel(self.master)
+        self.map_window.title(f"GG Map - {self.username}")
+        self.map_window.configure(bg=BG_COLOR)
+        self.map_window.geometry("600x400")
+        self.map_window.resizable(True, True)
+        
+        # Add icon if available
+        try:
+            if os.path.exists(ICON_FILE):
+                self.map_window.iconbitmap(ICON_FILE)
+        except:
+            pass
+        
+        main_frame = tk.Frame(self.map_window, bg=BG_COLOR)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = tk.Label(main_frame, text="GG Map Integration", 
+                              font=("Segoe UI", 16, "bold"), 
+                              bg=BG_COLOR, fg=FG_COLOR)
+        title_label.pack(pady=(0, 20))
+        
+        # Map URL
+        map_url = f"http://45.79.137.244:8888/map?username={self.username}"
+        
+        # Instructions
+        instructions = tk.Label(main_frame, 
+                               text="The integrated web view is not available.\nClick the button below to open the map in your browser:",
+                               font=("Segoe UI", 11),
+                               bg=BG_COLOR, fg=FG_COLOR,
+                               justify=tk.CENTER)
+        instructions.pack(pady=(0, 20))
+        
+        # URL display
+        url_frame = tk.Frame(main_frame, bg=ENTRY_BG, relief=tk.SUNKEN, bd=1)
+        url_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        url_text = tk.Text(url_frame, height=2, wrap=tk.WORD, 
+                          bg=ENTRY_BG, fg=FG_COLOR, 
+                          font=("Consolas", 9),
+                          relief=tk.FLAT, bd=5)
+        url_text.pack(fill=tk.BOTH, expand=True)
+        url_text.insert("1.0", map_url)
+        url_text.config(state=tk.DISABLED)
+        
+        # Buttons
+        button_frame = tk.Frame(main_frame, bg=BG_COLOR)
+        button_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        open_browser_btn = tk.Button(button_frame, text="Open in Browser", 
+                                    command=lambda: webbrowser.open(map_url),
+                                    bg=BUTTON_BG, fg=FG_COLOR, 
+                                    activebackground=BUTTON_ACTIVE,
+                                    font=("Segoe UI", 11, "bold"))
+        open_browser_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        copy_url_btn = tk.Button(button_frame, text="Copy URL", 
+                                command=lambda: self.copy_to_clipboard(map_url),
+                                bg=BUTTON_BG, fg=FG_COLOR, 
+                                activebackground=BUTTON_ACTIVE)
+        copy_url_btn.pack(side=tk.LEFT)
+        
+        # Status
+        status_label = tk.Label(main_frame, 
+                               text=f"Connected as: {self.username}",
+                               font=("Segoe UI", 10),
+                               bg=BG_COLOR, fg="#00ff00")
+        status_label.pack(pady=(20, 0))
+        
+        # Install instructions
+        install_frame = tk.Frame(main_frame, bg=BG_COLOR)
+        install_frame.pack(fill=tk.X, pady=(20, 0))
+        
+        install_label = tk.Label(install_frame, 
+                                text="For better integration, install: pip install pywebview",
+                                font=("Segoe UI", 9, "italic"),
+                                bg=BG_COLOR, fg="#888888")
+        install_label.pack()
+
+    def copy_to_clipboard(self, text):
+        """Copy text to clipboard"""
+        try:
+            self.master.clipboard_clear()
+            self.master.clipboard_append(text)
+            messagebox.showinfo("Copied", "URL copied to clipboard!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to copy to clipboard: {str(e)}")
 
     def poll_online_users(self):
         def fetch():
@@ -304,6 +956,32 @@ class ChatGui:
                 json.dump(self.config, f)
         except Exception as e:
             print(f"Failed to save config: {e}")
+
+    def on_closing(self):
+        """Handle window closing - save config and clean up"""
+        try:
+            # Save current sound notification settings
+            self.config["sound_notify"] = self.notify_var.get()
+            self.config["sound_alerts"] = self.alert_var.get()
+            
+            # Save window geometry for next startup
+            geometry = self.master.geometry()
+            self.config["window_geometry"] = geometry
+            
+            # Save configuration before closing
+            self.save_config()
+            
+            # Disconnect websocket if connected
+            if hasattr(self, 'client') and self.client:
+                try:
+                    self.client.cleanup()  # Use the new cleanup method
+                except:
+                    pass
+        except Exception as e:
+            print(f"Error during shutdown: {e}")
+        finally:
+            # Close the window
+            self.master.destroy()
 
     def get_user_color(self, username):
         if username not in self.user_colors:

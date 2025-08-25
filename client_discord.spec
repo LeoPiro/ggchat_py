@@ -5,8 +5,8 @@ a = Analysis(
     ['client_discord.py'],
     pathex=[],
     binaries=[],
-    datas=[('C:\\Users\\s2gri\\PycharmProjects\\GGChatPy\\.venv\\Lib\\site-packages\\irc\\codes.txt', 'irc'), ('alert.wav', '.'), ('gg_fUv_icon.ico', '.'), ('notify.mp3', '.')],
-    hiddenimports=[],
+    datas=[('C:\\Users\\s2gri\\PycharmProjects\\GGChatPy\\.venv\\Lib\\site-packages\\irc\\codes.txt', 'irc'), ('alert.wav', '.'), ('gg_fUv_icon.ico', '.'), ('notify.mp3', '.'), ('dist/webview_launcher.exe', '.')],
+    hiddenimports=['webview'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -36,4 +36,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version='version_info.txt',
 )
