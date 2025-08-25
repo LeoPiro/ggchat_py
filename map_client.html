@@ -319,6 +319,116 @@
                 opacity: 0;
             }
         }
+        
+        /* OCR Section Styles */
+        .ocr-section {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #444;
+        }
+        
+        .ocr-section h3 {
+            margin: 0 0 10px 0;
+            color: #ffd700;
+            font-size: 16px;
+        }
+        
+        .ocr-status {
+            background: #3d3d3d;
+            padding: 8px 12px;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 12px;
+            color: #aaa;
+            margin-bottom: 10px;
+            border: 1px solid #555;
+        }
+        
+        .ocr-status.processing {
+            background: #4a4a2e;
+            color: #ffd700;
+            border-color: #ffd700;
+        }
+        
+        .ocr-status.success {
+            background: #2e4a2e;
+            color: #4CAF50;
+            border-color: #4CAF50;
+        }
+        
+        .ocr-status.error {
+            background: #4a2e2e;
+            color: #f44336;
+            border-color: #f44336;
+        }
+        
+        .ocr-results {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+        
+        .ocr-results h4 {
+            margin: 0 0 8px 0;
+            color: #ffd700;
+            font-size: 14px;
+        }
+        
+        .ocr-text {
+            background: #1a1a1a;
+            padding: 8px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 11px;
+            color: #ccc;
+            max-height: 100px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            margin-bottom: 10px;
+        }
+        
+        .location-match {
+            background: #3d3d3d;
+            border: 1px solid #555;
+            border-radius: 3px;
+            padding: 6px 8px;
+            margin-bottom: 5px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .location-match:hover {
+            background: #4a4a4a;
+            border-color: #ffd700;
+        }
+        
+        .location-text {
+            color: #fff;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        
+        .location-source {
+            color: #aaa;
+            font-size: 10px;
+            margin-top: 2px;
+        }
+        
+        /* Match marker styles */
+        .match-marker {
+            animation: matchPulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes matchPulse {
+            0%, 100% { 
+                filter: drop-shadow(0 0 20px rgba(255, 0, 255, 1)) drop-shadow(0 0 40px rgba(255, 0, 255, 0.8)); 
+            }
+            50% { 
+                filter: drop-shadow(0 0 50px rgba(255, 0, 255, 1)) drop-shadow(0 0 80px rgba(255, 0, 255, 0.9)); 
+            }
+        }
     </style>
 </head>
 <body>
@@ -381,6 +491,16 @@
                         Ping sounds
                     </label>
                     <small>Play sound effects for all ping actions (yours and others).</small>
+                </div>
+            </div>
+            
+            <div class="ocr-section">
+                <h3>�️ Image Map Matching</h3>
+                <div class="ping-note">📋 Paste map screenshot with Ctrl+V</div>
+                <div id="ocr-status" class="ocr-status">Ready to find image location on map</div>
+                <div id="ocr-results" class="ocr-results" style="display: none;">
+                    <h4>Potential Matches:</h4>
+                    <div id="location-matches" class="location-matches"></div>
                 </div>
             </div>
             
@@ -461,6 +581,482 @@
             
             // Set up layer controls
             setupLayerControls();
+            
+            // Set up OCR functionality
+            setupImageOCR();
+        }
+        
+        // OCR Functionality
+        function setupImageOCR() {
+            // Handle paste events for image OCR
+            document.addEventListener('paste', handleImagePaste);
+        }
+        
+        async function handleImagePaste(event) {
+            console.log('Paste event triggered!', event);
+            console.log('Clipboard items:', event.clipboardData.items);
+            
+            const items = event.clipboardData.items;
+            
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                console.log(`Item ${i}: type=${item.type}, kind=${item.kind}`);
+                
+                if (item.type.startsWith('image/')) {
+                    console.log('Image detected! Processing...');
+                    event.preventDefault();
+                    
+                    const file = item.getAsFile();
+                    if (file) {
+                        console.log('File object created:', file);
+                        await processImageForOCR(file);
+                    } else {
+                        console.log('Failed to get file from clipboard item');
+                    }
+                    break;
+                }
+            }
+            
+            if (items.length === 0) {
+                console.log('No items in clipboard');
+            }
+        }
+        
+        async function processImageForOCR(file) {
+            console.log('processImageForOCR called with file:', file);
+            
+            // Check if debug mode is enabled
+            if (debugMode) {
+                return await processImageForDebug(file);
+            }
+            
+            const statusElement = document.getElementById('ocr-status');
+            const resultsElement = document.getElementById('ocr-results');
+            
+            console.log('Status element:', statusElement);
+            console.log('Results element:', resultsElement);
+            
+            // Update status
+            statusElement.textContent = 'Processing image...';
+            statusElement.className = 'ocr-status processing';
+            resultsElement.style.display = 'none';
+            
+            try {
+                // Convert file to base64
+                console.log('Converting file to base64...');
+                const base64Image = await fileToBase64(file);
+                console.log('Base64 conversion complete, length:', base64Image.length);
+                
+                // Send to Image Matching API
+                console.log('Sending to Image Matching API...');
+                const response = await fetch(`http://${SERVER_URL}/api/match-image`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        image: base64Image
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    displayImageMatchResults(result);
+                    statusElement.textContent = result.message || 'Image matching completed successfully';
+                    statusElement.className = 'ocr-status success';
+                } else {
+                    throw new Error(result.error || 'Image matching failed');
+                }
+                
+            } catch (error) {
+                console.error('Image Matching Error:', error);
+                statusElement.textContent = `Error: ${error.message}`;
+                statusElement.className = 'ocr-status error';
+                resultsElement.style.display = 'none';
+            }
+        }
+        
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+        
+        function displayImageMatchResults(result) {
+            const resultsElement = document.getElementById('ocr-results');
+            const matchesElement = document.getElementById('location-matches');
+            
+            // Display image match results
+            matchesElement.innerHTML = '';
+            
+            if (result.matches && result.matches.length > 0) {
+                result.matches.forEach((match, index) => {
+                    const matchDiv = document.createElement('div');
+                    matchDiv.className = 'location-match';
+                    
+                    const confidence = (match.confidence * 100).toFixed(1);
+                    const lat = match.leaflet_location[0].toFixed(0);
+                    const lng = match.leaflet_location[1].toFixed(0);
+                    
+                    matchDiv.innerHTML = `
+                        <div class="location-text">Match ${index + 1} (${confidence}% confidence)</div>
+                        <div class="location-source">Location: [${lat}, ${lng}] - Click to view</div>
+                    `;
+                    
+                    // Add click handler to zoom to this location
+                    matchDiv.addEventListener('click', () => {
+                        zoomToLocation(match.leaflet_location, match);
+                    });
+                    
+                    matchesElement.appendChild(matchDiv);
+                });
+                
+                // Auto-zoom to the best match if confidence is high
+                const bestMatch = result.matches[0];
+                if (bestMatch.confidence > 0.8) {
+                    console.log('High confidence match found, auto-zooming...');
+                    setTimeout(() => {
+                        zoomToLocation(bestMatch.leaflet_location, bestMatch);
+                    }, 1000);
+                }
+            } else {
+                matchesElement.innerHTML = '<div style="color: #aaa; font-style: italic;">No matches found on the map</div>';
+            }
+            
+            resultsElement.style.display = 'block';
+        }
+        
+        function zoomToLocation(leafletLocation, matchInfo) {
+            const [lat, lng] = leafletLocation;
+            
+            // Zoom to the location
+            map.setView([lat, lng], 1, {
+                animate: true,
+                duration: 1.0
+            });
+            
+            // Add a temporary marker to show the match
+            const matchIcon = L.divIcon({
+                className: 'match-marker',
+                html: `
+                    <div style="background: rgba(255, 0, 255, 0.9); border: 2px solid #ff00ff; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 18px; color: white; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.4);">🎯</div>
+                `,
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            });
+            
+            const marker = L.marker([lat, lng], { icon: matchIcon }).addTo(map);
+            
+            // Remove the marker after 10 seconds
+            setTimeout(() => {
+                map.removeLayer(marker);
+            }, 10000);
+            
+            console.log('Zoomed to match:', matchInfo);
+        }
+        
+        // Debug mode functionality
+        let debugMode = false;
+        
+        function enableDebugMode() {
+            debugMode = true;
+            
+            // Create or find debug status element
+            let statusDiv = document.getElementById('debug-status');
+            if (!statusDiv) {
+                statusDiv = document.createElement('div');
+                statusDiv.id = 'debug-status';
+                statusDiv.style.color = '#ff6b35';
+                statusDiv.style.fontSize = '12px';
+                statusDiv.style.margin = '5px 0';
+                
+                // Insert after the debug button
+                const debugBtn = document.getElementById('debugMatchBtn');
+                if (debugBtn) {
+                    debugBtn.insertAdjacentElement('afterend', statusDiv);
+                }
+            }
+            
+            statusDiv.style.display = 'block';
+            statusDiv.textContent = 'Debug mode active - next paste will save analysis images';
+            
+            const debugBtn = document.getElementById('debugMatchBtn');
+            if (debugBtn) {
+                debugBtn.textContent = '🔍 Debug Mode ON';
+                debugBtn.style.background = '#28a745';
+            }
+            console.log('Debug mode enabled - next image paste will use debug endpoint');
+        }
+        
+        // Add debug button to the page
+        document.addEventListener('DOMContentLoaded', function() {
+            const ocrSection = document.querySelector('.ocr-section');
+            if (ocrSection) {
+                const debugBtn = document.createElement('button');
+                debugBtn.id = 'debugMatchBtn';
+                debugBtn.onclick = enableDebugMode;
+                debugBtn.style.cssText = 'margin: 5px 0; padding: 5px 10px; background: #ff6b35; color: white; border: none; border-radius: 3px; cursor: pointer;';
+                debugBtn.textContent = '🔍 Enable Debug Mode';
+                
+                // Insert after the ping note
+                const pingNote = ocrSection.querySelector('.ping-note');
+                if (pingNote) {
+                    pingNote.insertAdjacentElement('afterend', debugBtn);
+                }
+            }
+        });
+        
+        async function processImageForDebug(file) {
+            console.log('processImageForDebug called with file:', file);
+            const statusElement = document.getElementById('ocr-status');
+            const resultsElement = document.getElementById('ocr-results');
+            
+            // Update status
+            statusElement.textContent = 'Processing image in DEBUG mode...';
+            statusElement.className = 'ocr-status processing';
+            resultsElement.style.display = 'none';
+            
+            try {
+                // Convert file to base64
+                const base64Image = await fileToBase64(file);
+                
+                // Send to DEBUG Image Matching API
+                console.log('Sending to DEBUG Image Matching API...');
+                const response = await fetch(`http://${SERVER_URL}/api/match-image-debug`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        image: base64Image
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    displayDebugResults(result);
+                    statusElement.textContent = 'Debug analysis completed - check console and server files';
+                    statusElement.className = 'ocr-status success';
+                } else {
+                    throw new Error(result.error || 'Debug analysis failed');
+                }
+                
+                // Reset debug mode
+                debugMode = false;
+                const debugStatus = document.getElementById('debug-status');
+                if (debugStatus) {
+                    debugStatus.style.display = 'none';
+                }
+                const debugBtn = document.getElementById('debugMatchBtn');
+                if (debugBtn) {
+                    debugBtn.textContent = '🔍 Enable Debug Mode';
+                    debugBtn.style.background = '#ff6b35';
+                }
+                
+            } catch (error) {
+                console.error('Debug Analysis Error:', error);
+                statusElement.textContent = `Debug Error: ${error.message}`;
+                statusElement.className = 'ocr-status error';
+                resultsElement.style.display = 'none';
+                
+                // Reset debug mode on error
+                debugMode = false;
+                const debugStatus = document.getElementById('debug-status');
+                if (debugStatus) {
+                    debugStatus.style.display = 'none';
+                }
+                const debugBtn = document.getElementById('debugMatchBtn');
+                if (debugBtn) {
+                    debugBtn.textContent = '🔍 Enable Debug Mode';
+                    debugBtn.style.background = '#ff6b35';
+                }
+            }
+        }
+        
+        function displayDebugResults(result) {
+            console.log('=== DEBUG ANALYSIS RESULTS ===');
+            console.log('Debug Analysis:', result.debug_analysis);
+            console.log('Debug Files Created:', result.debug_files);
+            console.log('================================');
+            
+            const resultsElement = document.getElementById('ocr-results');
+            const matchesElement = document.getElementById('location-matches');
+            
+            // Display debug analysis
+            const debugHtml = `
+                <div style="background: #2c3e50; color: #ecf0f1; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 2px solid #34495e;">
+                    <h4 style="color: #e74c3c; margin-top: 0;">🔍 Debug Analysis Results</h4>
+                    <div style="margin: 8px 0;"><strong style="color: #3498db;">Max Confidence:</strong> <span style="color: #2ecc71;">${(result.debug_analysis.max_confidence * 100).toFixed(1)}%</span></div>
+                    <div style="margin: 8px 0;"><strong style="color: #3498db;">Query Size:</strong> ${result.debug_analysis.query_size[0]}x${result.debug_analysis.query_size[1]}</div>
+                    <div style="margin: 8px 0;"><strong style="color: #3498db;">Map Size (cropped):</strong> ${result.debug_analysis.map_size_cropped[0]}x${result.debug_analysis.map_size_cropped[1]}</div>
+                    <div style="margin: 8px 0;"><strong style="color: #3498db;">Scale Factor:</strong> ${result.debug_analysis.scale_factor.toFixed(3)}</div>
+                    <div style="margin: 8px 0;"><strong style="color: #3498db;">Best Location:</strong> [${result.debug_analysis.best_location_original[0]}, ${result.debug_analysis.best_location_original[1]}]</div>
+                    <div style="margin-top: 15px;">
+                        <strong style="color: #f39c12;">Threshold Tests:</strong><br>
+                        <div style="margin: 5px 0; padding: 5px; background: rgba(0,0,0,0.3); border-radius: 4px;">
+                            0.15: ${result.debug_analysis.would_pass_threshold_0_15 ? '<span style="color: #2ecc71;">✅ PASS</span>' : '<span style="color: #e74c3c;">❌ FAIL</span>'}<br>
+                            0.20: ${result.debug_analysis.would_pass_threshold_0_2 ? '<span style="color: #2ecc71;">✅ PASS</span>' : '<span style="color: #e74c3c;">❌ FAIL</span>'}<br>
+                            0.25: ${result.debug_analysis.would_pass_threshold_0_25 ? '<span style="color: #2ecc71;">✅ PASS</span>' : '<span style="color: #e74c3c;">❌ FAIL</span>'}<br>
+                            0.30: ${result.debug_analysis.would_pass_threshold_0_3 ? '<span style="color: #2ecc71;">✅ PASS</span>' : '<span style="color: #e74c3c;">❌ FAIL</span>'}
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <strong style="color: #f39c12;">Debug Images:</strong>
+                        <div style="margin: 10px 0;">
+                            <button onclick="viewDebugImages()" style="padding: 8px 12px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; margin: 5px;">
+                                📷 View Debug Images
+                            </button>
+                            <button onclick="downloadDebugImages()" style="padding: 8px 12px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; margin: 5px;">
+                                💾 Download Debug Images
+                            </button>
+                        </div>
+                        <div id="debug-images-container" style="display: none; margin-top: 10px; max-height: 400px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px;">
+                            <!-- Debug images will be loaded here -->
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 12px; color: #95a5a6;">
+                        <strong>Files created on server:</strong><br>
+                        ${result.debug_files ? result.debug_files.map(file => `<span style="font-family: monospace; background: rgba(0,0,0,0.3); padding: 2px 4px; border-radius: 2px;">${file}</span>`).join('<br>') : 'No debug files listed'}
+                    </div>
+                </div>
+            `;
+            
+            matchesElement.innerHTML = debugHtml;
+            
+            // Display any matches found
+            if (result.matches && result.matches.length > 0) {
+                result.matches.forEach((match, index) => {
+                    const matchDiv = document.createElement('div');
+                    matchDiv.className = 'location-match';
+                    
+                    const confidence = (match.confidence * 100).toFixed(1);
+                    const lat = match.leaflet_location[0].toFixed(0);
+                    const lng = match.leaflet_location[1].toFixed(0);
+                    
+                    matchDiv.innerHTML = `
+                        <div class="location-text">Debug Match ${index + 1} (${confidence}% confidence)</div>
+                        <div class="location-coords">Coords: ${lat}, ${lng}</div>
+                        <button onclick="zoomToLocation([${match.leaflet_location[0]}, ${match.leaflet_location[1]}])" class="zoom-btn">📍 Go to Location</button>
+                    `;
+                    
+                    matchesElement.appendChild(matchDiv);
+                });
+            }
+            
+            resultsElement.style.display = 'block';
+        }
+        
+        function viewDebugImages() {
+            const container = document.getElementById('debug-images-container');
+            if (container.style.display === 'none') {
+                // Show debug images
+                container.style.display = 'block';
+                loadDebugImages();
+            } else {
+                // Hide debug images
+                container.style.display = 'none';
+            }
+        }
+        
+        function loadDebugImages() {
+            const container = document.getElementById('debug-images-container');
+            const debugFiles = [
+                'debug_uploaded_original.png',
+                'debug_query.png',
+                'debug_cropped_map.png',
+                'debug_scaled_map.png',
+                'debug_scaled_query.png',
+                'debug_match_heatmap.png',
+                'debug_map_with_match.png'
+            ];
+            
+            container.innerHTML = '<div style="color: #ecf0f1; margin-bottom: 10px;">Loading debug images...</div>';
+            
+            let imagesHtml = '';
+            debugFiles.forEach((filename, index) => {
+                const imageUrl = `http://${SERVER_URL}/${filename}?t=${Date.now()}`;
+                imagesHtml += `
+                    <div style="margin: 15px 0; border: 2px solid #34495e; border-radius: 8px; padding: 10px; background: rgba(0,0,0,0.3);">
+                        <h5 style="color: #3498db; margin: 0 0 10px 0;">${index + 1}. ${filename}</h5>
+                        <div style="text-align: center;">
+                            <img src="${imageUrl}" 
+                                 style="max-width: 100%; max-height: 300px; border: 1px solid #555; border-radius: 4px; background: white;"
+                                 onload="this.style.border='2px solid #2ecc71'"
+                                 onerror="this.style.border='2px solid #e74c3c'; this.alt='Failed to load: ${filename}'"
+                                 alt="Debug image: ${filename}">
+                        </div>
+                        <div style="margin-top: 8px; text-align: center;">
+                            <a href="${imageUrl}" download="${filename}" 
+                               style="padding: 4px 8px; background: #27ae60; color: white; text-decoration: none; border-radius: 3px; font-size: 12px;">
+                               💾 Download
+                            </a>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = imagesHtml;
+        }
+        
+        function downloadDebugImages() {
+            const debugFiles = [
+                'debug_uploaded_original.png',
+                'debug_query.png',
+                'debug_cropped_map.png',
+                'debug_scaled_map.png',
+                'debug_scaled_query.png',
+                'debug_match_heatmap.png',
+                'debug_map_with_match.png'
+            ];
+            
+            debugFiles.forEach((filename, index) => {
+                setTimeout(() => {
+                    const link = document.createElement('a');
+                    link.href = `http://${SERVER_URL}/${filename}?t=${Date.now()}`;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }, index * 500); // Stagger downloads by 500ms
+            });
+            
+            alert('Downloading all debug images... Check your downloads folder.');
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function searchForLocation(locationText) {
+            // For now, just alert the user - you can enhance this to actually search/geocode
+            alert(`Searching for: ${locationText}\n\nThis would normally trigger a geocoding search to find the location on the map.`);
+            
+            // TODO: Implement actual location search/geocoding
+            // This could integrate with a geocoding service like:
+            // - OpenStreetMap Nominatim
+            // - Google Geocoding API
+            // - Game-specific location database
+        }
+        
+        function setupLayerControls() {
+            // Add event listeners to layer checkboxes
+            for (const layerName in layerConfig) {
+                const checkbox = document.getElementById(`layer-${layerName}`);
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        map.addLayer(mapLayers[layerName]);
+                    } else {
+                        map.removeLayer(mapLayers[layerName]);
+                    }
+                });
+            }
         }
         
         function setupLayerControls() {

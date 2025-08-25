@@ -18,13 +18,6 @@ from jose import jwt, JWTError
 import discord
 from discord.ext import commands
 
-# Load environment variables from .env file
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    print("[WARNING] python-dotenv not installed. Environment variables should be set manually.")
-
 # OCR and image processing
 try:
     import cv2
@@ -38,7 +31,7 @@ except ImportError:
 # Discord configuration - should be set as environment variables
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "YOUR_DISCORD_CLIENT_ID_HERE")
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "YOUR_DISCORD_CLIENT_SECRET_HERE")
-DISCORD_REDIRECT_URI = "http://localhost:8888/callback"
+DISCORD_REDIRECT_URI = "http://localhost:8000/callback"
 
 # FastAPI app
 app = FastAPI()
@@ -217,29 +210,6 @@ async def map_websocket_endpoint(websocket: WebSocket):
 # Image matching functionality
 if IMAGE_MATCHING_AVAILABLE:
     
-    def calculate_color_histogram_similarity(img1, img2):
-        """Calculate color histogram similarity between two images"""
-        try:
-            # Calculate histograms for each channel
-            hist1_b = cv2.calcHist([img1], [0], None, [256], [0, 256])
-            hist1_g = cv2.calcHist([img1], [1], None, [256], [0, 256])
-            hist1_r = cv2.calcHist([img1], [2], None, [256], [0, 256])
-            
-            hist2_b = cv2.calcHist([img2], [0], None, [256], [0, 256])
-            hist2_g = cv2.calcHist([img2], [1], None, [256], [0, 256])
-            hist2_r = cv2.calcHist([img2], [2], None, [256], [0, 256])
-            
-            # Compare histograms using correlation
-            corr_b = cv2.compareHist(hist1_b, hist2_b, cv2.HISTCMP_CORREL)
-            corr_g = cv2.compareHist(hist1_g, hist2_g, cv2.HISTCMP_CORREL)
-            corr_r = cv2.compareHist(hist1_r, hist2_r, cv2.HISTCMP_CORREL)
-            
-            # Average correlation across all channels
-            avg_correlation = (corr_b + corr_g + corr_r) / 3.0
-            return avg_correlation
-        except:
-            return 0.0
-    
     def find_image_in_map(query_image: Image.Image, map_image_path: str = "ggmap.png") -> dict:
         """
         Simple template matching for finding image locations on the map
@@ -253,16 +223,8 @@ if IMAGE_MATCHING_AVAILABLE:
             if base_map is None:
                 return {"error": f"Could not load base map: {map_image_path}"}
             
-            # Convert base map to different color spaces for better discrimination
-            base_map_hsv = cv2.cvtColor(base_map, cv2.COLOR_BGR2HSV)
-            base_map_lab = cv2.cvtColor(base_map, cv2.COLOR_BGR2LAB)
-            
             # Convert PIL query image to OpenCV format
             query_cv = cv2.cvtColor(np.array(query_image), cv2.COLOR_RGB2BGR)
-            
-            # Try different color spaces for better color discrimination
-            query_hsv = cv2.cvtColor(query_cv, cv2.COLOR_BGR2HSV)
-            query_lab = cv2.cvtColor(query_cv, cv2.COLOR_BGR2LAB)
             
             # Get dimensions
             query_h, query_w = query_cv.shape[:2]
@@ -277,15 +239,11 @@ if IMAGE_MATCHING_AVAILABLE:
             
             if map_w > max_x:
                 base_map = base_map[:, :max_x]
-                base_map_hsv = base_map_hsv[:, :max_x]
-                base_map_lab = base_map_lab[:, :max_x]
                 map_w = max_x
                 print(f"[DEBUG] Cropped map width to x={max_x}")
             
             if map_h > max_y:
                 base_map = base_map[:max_y, :]
-                base_map_hsv = base_map_hsv[:max_y, :]
-                base_map_lab = base_map_lab[:max_y, :]
                 map_h = max_y
                 print(f"[DEBUG] Cropped map height to y={max_y}")
             
@@ -307,103 +265,69 @@ if IMAGE_MATCHING_AVAILABLE:
                 new_map_w = int(map_w * scale_factor)
                 new_map_h = int(map_h * scale_factor)
                 base_map_scaled = cv2.resize(base_map, (new_map_w, new_map_h))
-                base_map_hsv_scaled = cv2.resize(base_map_hsv, (new_map_w, new_map_h))
-                base_map_lab_scaled = cv2.resize(base_map_lab, (new_map_w, new_map_h))
                 query_cv_scaled = cv2.resize(query_cv, 
-                    (int(query_w * scale_factor), int(query_h * scale_factor)))
-                query_hsv_scaled = cv2.resize(query_hsv, 
-                    (int(query_w * scale_factor), int(query_h * scale_factor)))
-                query_lab_scaled = cv2.resize(query_lab, 
                     (int(query_w * scale_factor), int(query_h * scale_factor)))
                 print(f"[DEBUG] Scaled to: {new_map_w}x{new_map_h}, scale: {scale_factor:.3f}")
             else:
                 base_map_scaled = base_map
-                base_map_hsv_scaled = base_map_hsv
-                base_map_lab_scaled = base_map_lab
                 query_cv_scaled = query_cv
-                query_hsv_scaled = query_hsv
-                query_lab_scaled = query_lab
             
-            # Template matching with multiple color spaces and methods
+            # Simple template matching - focus on accuracy over performance
             best_matches = []
             
-            # Try different color spaces and matching methods
-            color_spaces = [
-                (base_map_scaled, query_cv_scaled, "BGR"),
-                (base_map_hsv_scaled, query_hsv_scaled, "HSV"),
-                (base_map_lab_scaled, query_lab_scaled, "LAB")
-            ]
-            
+            # Try different matching methods
             methods = [
-                (cv2.TM_CCOEFF_NORMED, "correlation", 0.3),
-                (cv2.TM_CCORR_NORMED, "cross_correlation", 0.3),
-                (cv2.TM_SQDIFF_NORMED, "squared_diff", 0.7)
+                (cv2.TM_CCOEFF_NORMED, "correlation", 0.4),
+                (cv2.TM_CCORR_NORMED, "cross_correlation", 0.4),
+                (cv2.TM_SQDIFF_NORMED, "squared_diff", 0.6)
             ]
             
-            for base_img, query_img, color_name in color_spaces:
-                for method, method_name, threshold in methods:
-                    print(f"[DEBUG] Trying {method_name} method in {color_name} space")
+            for method, name, threshold in methods:
+                print(f"[DEBUG] Trying {name} method")
+                
+                try:
+                    result = cv2.matchTemplate(base_map_scaled, query_cv_scaled, method)
+                    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
                     
-                    try:
-                        result = cv2.matchTemplate(base_img, query_img, method)
-                        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-                        
-                        # For SQDIFF, lower values are better
-                        if method == cv2.TM_SQDIFF_NORMED:
-                            confidence = 1.0 - min_val
-                            best_match_loc = min_loc
-                            threshold = 1.0 - threshold
-                        else:
-                            confidence = max_val
-                            best_match_loc = max_loc
-                        
-                        print(f"[DEBUG] {color_name}-{method_name}: confidence={confidence:.3f}, threshold={threshold:.3f}")
-                        
-                        if confidence >= threshold:
-                            # Calculate center coordinates
-                            center_x = int((best_match_loc[0] + query_cv_scaled.shape[1] // 2) / scale_factor)
-                            center_y = int((best_match_loc[1] + query_cv_scaled.shape[0] // 2) / scale_factor)
-                            
-                            # Skip if out of bounds
-                            if center_x > 4600:
-                                print(f"[DEBUG] Skipping match beyond x=4600: {center_x}")
-                                continue
-                            
-                            # Extract the matched region for histogram comparison
-                            match_region = base_img[best_match_loc[1]:best_match_loc[1]+query_img.shape[0], 
-                                                  best_match_loc[0]:best_match_loc[0]+query_img.shape[1]]
-                            
-                            # Calculate histogram similarity (only for BGR color space to avoid redundancy)
-                            histogram_similarity = 0.0
-                            if color_name == "BGR" and match_region.shape == query_img.shape:
-                                histogram_similarity = calculate_color_histogram_similarity(match_region, query_img)
-                                print(f"[DEBUG] Histogram similarity: {histogram_similarity:.3f}")
-                                
-                                # Require minimum histogram similarity for ice/snow vs desert discrimination
-                                if histogram_similarity < 0.3:
-                                    print(f"[DEBUG] Rejecting match due to poor histogram similarity: {histogram_similarity:.3f}")
-                                    continue
-                            
-                            # Convert to Leaflet coordinates
-                            leaflet_lat = original_map_h - center_y
-                            leaflet_lng = center_x
-                            
-                            match_info = {
-                                "confidence": float(confidence),
-                                "raw_confidence": float(confidence),
-                                "histogram_similarity": float(histogram_similarity),
-                                "method": f"{color_name}_{method_name}",
-                                "color_space": color_name,
-                                "pixel_location": [center_x, center_y],
-                                "leaflet_location": [leaflet_lat, leaflet_lng]
-                            }
-                            best_matches.append(match_info)
-                            
-                            print(f"[DEBUG] Found match: {confidence:.3f} at ({center_x}, {center_y}) using {color_name}-{method_name}")
+                    # For SQDIFF, lower values are better
+                    if method == cv2.TM_SQDIFF_NORMED:
+                        confidence = 1.0 - min_val
+                        best_match_loc = min_loc
+                        threshold = 1.0 - threshold
+                    else:
+                        confidence = max_val
+                        best_match_loc = max_loc
                     
-                    except Exception as e:
-                        print(f"[DEBUG] Method {color_name}-{method_name} failed: {e}")
-                        continue
+                    print(f"[DEBUG] {name}: confidence={confidence:.3f}, threshold={threshold:.3f}")
+                    
+                    if confidence >= threshold:
+                        # Calculate center coordinates
+                        center_x = int((best_match_loc[0] + query_cv_scaled.shape[1] // 2) / scale_factor)
+                        center_y = int((best_match_loc[1] + query_cv_scaled.shape[0] // 2) / scale_factor)
+                        
+                        # Skip if out of bounds
+                        if center_x > 4600:
+                            print(f"[DEBUG] Skipping match beyond x=4600: {center_x}")
+                            continue
+                        
+                        # Convert to Leaflet coordinates
+                        leaflet_lat = original_map_h - center_y
+                        leaflet_lng = center_x
+                        
+                        match_info = {
+                            "confidence": float(confidence),
+                            "raw_confidence": float(confidence),
+                            "method": name,
+                            "pixel_location": [center_x, center_y],
+                            "leaflet_location": [leaflet_lat, leaflet_lng]
+                        }
+                        best_matches.append(match_info)
+                        
+                        print(f"[DEBUG] Found match: {confidence:.3f} at ({center_x}, {center_y})")
+                
+                except Exception as e:
+                    print(f"[DEBUG] Method {name} failed: {e}")
+                    continue
             
             # Sort by confidence
             best_matches.sort(key=lambda x: x['confidence'], reverse=True)
@@ -412,11 +336,10 @@ if IMAGE_MATCHING_AVAILABLE:
                 return {
                     "matches": best_matches[:3],  # Return top 3 matches
                     "total_found": len(best_matches),
-                    "method_used": "multi_colorspace_template_matching",
+                    "method_used": "simple_template_matching",
                     "query_size": [query_w, query_h],
                     "map_size": [map_w, map_h],
-                    "scale_factor": scale_factor,
-                    "color_spaces_tested": ["BGR", "HSV", "LAB"]
+                    "scale_factor": scale_factor
                 }
             else:
                 return {
@@ -680,7 +603,7 @@ async def main():
     bot_task = asyncio.create_task(bot.start(DISCORD_BOT_TOKEN))
     
     # Start the FastAPI server
-    config = uvicorn.Config(app, host="0.0.0.0", port=8888, log_level="info")
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
     server = uvicorn.Server(config)
     
     try:
