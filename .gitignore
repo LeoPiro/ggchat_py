@@ -65,6 +65,9 @@ dist/
 *.pkg
 *.toc
 
+# PyInstaller specific
+*.spec.backup
+
 # Logs
 *.log
 
