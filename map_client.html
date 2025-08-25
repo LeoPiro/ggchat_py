@@ -164,6 +164,125 @@
             border-top: 1px solid #444;
         }
         
+        .ocr-controls {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #444;
+        }
+        
+        .ocr-controls h3 {
+            margin: 0 0 10px 0;
+            color: #ffd700;
+            font-size: 16px;
+        }
+        
+        .ocr-note {
+            background: #3d3d3d;
+            padding: 8px 12px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+            color: #00bcd4;
+            margin-bottom: 15px;
+            border: 1px solid #555;
+        }
+        
+        .ocr-status {
+            background: #3d3d3d;
+            padding: 8px 12px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            border: 1px solid #555;
+            color: #ccc;
+        }
+        
+        .ocr-status.processing {
+            color: #ff9800;
+            border-color: #ff9800;
+        }
+        
+        .ocr-status.success {
+            color: #4caf50;
+            border-color: #4caf50;
+        }
+        
+        .ocr-status.error {
+            color: #f44336;
+            border-color: #f44336;
+        }
+        
+        .ocr-results {
+            margin-top: 10px;
+        }
+        
+        .ocr-results h4 {
+            margin: 0 0 8px 0;
+            color: #ffd700;
+            font-size: 14px;
+        }
+        
+        .match-item {
+            background: #3d3d3d;
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            border-radius: 5px;
+            border: 1px solid #555;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+        
+        .match-item:hover {
+            background: #4d4d4d;
+            border-color: #00bcd4;
+        }
+        
+        .match-confidence {
+            color: #4caf50;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        
+        .match-coords {
+            color: #999;
+            font-size: 12px;
+        }
+        
+        .clear-btn {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 5px;
+            width: 100%;
+        }
+        
+        .clear-btn:hover {
+            background: #d32f2f;
+        }
+        
+        .ocr-settings {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid #444;
+        }
+        
+        .image-preview {
+            margin: 10px 0;
+            padding: 10px;
+            background: #3d3d3d;
+            border-radius: 5px;
+            border: 1px solid #555;
+        }
+        
+        .image-preview h4 {
+            margin: 0 0 8px 0;
+            color: #ffd700;
+            font-size: 14px;
+        }
+        
         .ping-note {
             background: #3d3d3d;
             padding: 8px 12px;
@@ -381,6 +500,44 @@
                         Ping sounds
                     </label>
                     <small>Play sound effects for all ping actions (yours and others).</small>
+                </div>
+            </div>
+            
+            <div class="ocr-controls">
+                <h3>🔍 Image Matching</h3>
+                <div class="ocr-note">📋 Paste image with Ctrl + V</div>
+                
+                <div class="ocr-status" id="ocr-status">
+                    <small>Paste an image to find it on the map</small>
+                </div>
+                
+                <div class="image-preview" id="image-preview" style="display: none;">
+                    <h4>Uploaded Image:</h4>
+                    <img id="preview-img" src="" style="max-width: 100%; max-height: 150px; border: 1px solid #555; border-radius: 5px;">
+                </div>
+                
+                <div class="ocr-results" id="ocr-results" style="display: none;">
+                    <h4>Found Matches:</h4>
+                    <div id="match-list"></div>
+                    <button id="clear-matches" class="clear-btn">Clear Results</button>
+                </div>
+                
+                <div class="ocr-settings">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="auto-zoom-matches" checked>
+                        <span class="toggle-slider"></span>
+                        Auto-zoom to best match
+                    </label>
+                    <small>Automatically zoom to the highest confidence match found.</small>
+                    
+                    <div style="margin-top: 10px;">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="enable-feature-matching" checked>
+                            <span class="toggle-slider"></span>
+                            Advanced feature matching
+                        </label>
+                        <small>Use ORB features for more robust matching (slower but more accurate).</small>
+                    </div>
                 </div>
             </div>
             
@@ -815,7 +972,267 @@
             
             // Add some sample markers for testing
             addSampleMarkers();
+            
+            // Set up OCR functionality
+            setupOCRHandlers();
         });
+        
+        // OCR-related variables
+        let currentMatches = [];
+        let matchMarkers = [];
+        
+        function setupOCRHandlers() {
+            // Add paste event listener to the document
+            document.addEventListener('paste', handlePaste);
+            
+            // Set up clear matches button
+            document.getElementById('clear-matches').addEventListener('click', clearOCRResults);
+        }
+        
+        async function handlePaste(event) {
+            console.log('Paste event detected');
+            
+            // Check if paste contains image data
+            const items = event.clipboardData.items;
+            let imageItem = null;
+            
+            console.log(`Clipboard has ${items.length} items`);
+            
+            for (let i = 0; i < items.length; i++) {
+                console.log(`Item ${i}: type = ${items[i].type}, kind = ${items[i].kind}`);
+                if (items[i].type.indexOf('image') !== -1) {
+                    imageItem = items[i];
+                    console.log('Found image item:', imageItem.type);
+                    break;
+                }
+            }
+            
+            if (!imageItem) {
+                console.log('No image detected in clipboard');
+                // Show a brief message that no image was detected
+                updateOCRStatus('No image detected in clipboard', 'error');
+                setTimeout(() => {
+                    updateOCRStatus('Paste an image to find it on the map');
+                }, 2000);
+                return;
+            }
+            
+            // Prevent default paste behavior
+            event.preventDefault();
+            console.log('Prevented default paste, processing image...');
+            
+            // Get image file and convert to base64
+            const imageFile = imageItem.getAsFile();
+            if (!imageFile) {
+                console.error('Failed to get image file from clipboard item');
+                updateOCRStatus('Failed to access image data', 'error');
+                return;
+            }
+            
+            console.log(`Image file size: ${imageFile.size} bytes, type: ${imageFile.type}`);
+            
+            updateOCRStatus('Processing image...', 'processing');
+            
+            try {
+                console.log('Converting image to base64...');
+                const base64Image = await fileToBase64(imageFile);
+                console.log(`Base64 conversion complete, length: ${base64Image.length}`);
+                
+                // Show image preview
+                const previewEl = document.getElementById('image-preview');
+                const previewImg = document.getElementById('preview-img');
+                previewImg.src = base64Image;
+                previewEl.style.display = 'block';
+                console.log('Image preview displayed');
+                
+                await performOCR(base64Image);
+            } catch (error) {
+                console.error('Error in handlePaste:', error);
+                updateOCRStatus('Error processing image: ' + error.message, 'error');
+            }
+        }
+        
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+        
+        async function performOCR(base64Image) {
+            try {
+                console.log('Starting OCR process...');
+                
+                // Get user settings
+                const enableFeatures = document.getElementById('enable-feature-matching').checked;
+                
+                console.log(`Settings - Features: ${enableFeatures}`);
+                console.log(`Image data length: ${base64Image.length}`);
+                
+                const requestBody = {
+                    image_data: base64Image,
+                    threshold: 0.4,  // Fixed threshold since we always return best matches
+                    enable_features: enableFeatures
+                };
+                
+                console.log('Sending OCR request...');
+                
+                const response = await fetch('/api/ocr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                console.log(`Response status: ${response.status}`);
+                
+                const result = await response.json();
+                console.log('OCR response received:', result);
+                
+                if (result.success) {
+                    currentMatches = result.matches;
+                    displayOCRResults(result.matches);
+                    
+                    if (result.matches.length > 0) {
+                        updateOCRStatus(`Found ${result.matches.length} matches`, 'success');
+                        
+                        // Auto-zoom to best match if enabled
+                        const autoZoom = document.getElementById('auto-zoom-matches').checked;
+                        if (autoZoom && result.matches.length > 0) {
+                            const bestMatch = result.matches[0];
+                            map.setView([bestMatch.lat, bestMatch.lng], 1, {
+                                animate: true,
+                                duration: 1.0
+                            });
+                        }
+                    } else {
+                        updateOCRStatus('No matches found - image may not be from this map', 'error');
+                    }
+                } else {
+                    console.error('OCR failed:', result.error);
+                    updateOCRStatus('Error: ' + result.error, 'error');
+                }
+            } catch (error) {
+                console.error('OCR API Error:', error);
+                updateOCRStatus('Failed to process image: ' + error.message, 'error');
+            }
+        }
+        
+        function updateOCRStatus(message, type = '') {
+            const statusEl = document.getElementById('ocr-status');
+            statusEl.innerHTML = `<small>${message}</small>`;
+            statusEl.className = 'ocr-status ' + type;
+        }
+        
+        function displayOCRResults(matches) {
+            const resultsEl = document.getElementById('ocr-results');
+            const matchListEl = document.getElementById('match-list');
+            
+            if (matches.length === 0) {
+                resultsEl.style.display = 'none';
+                return;
+            }
+            
+            // Clear previous match markers
+            clearMatchMarkers();
+            
+            // Create match list items
+            matchListEl.innerHTML = matches.map((match, index) => {
+                const methodName = getMethodDisplayName(match.method);
+                return `
+                    <div class="match-item" onclick="zoomToMatch(${index})">
+                        <div class="match-confidence">Match ${index + 1} - ${(match.confidence * 100).toFixed(1)}% confidence</div>
+                        <div class="match-coords">Coordinates: ${match.lng}, ${match.lat}</div>
+                        <div class="match-coords">Scale: ${match.scale ? (match.scale * 100).toFixed(0) + '%' : '100%'} | Size: ${match.width}x${match.height}px</div>
+                        <div class="match-coords" style="color: #00bcd4;">Method: ${methodName}</div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Add markers for all matches
+            matches.forEach((match, index) => {
+                addMatchMarker(match, index);
+            });
+            
+            resultsEl.style.display = 'block';
+        }
+        
+        function getMethodDisplayName(method) {
+            const methodNames = {
+                '5': 'Template (CCOEFF)',
+                '3': 'Template (CCORR)', 
+                '1': 'Template (SQDIFF)',
+                'ORB_FEATURES': 'Feature-based (ORB)'
+            };
+            return methodNames[method] || 'Template';
+        }
+        
+        function addMatchMarker(match, index) {
+            // Create marker icon for OCR matches
+            const matchIcon = L.divIcon({
+                className: 'match-marker',
+                html: `
+                    <div style="background: rgba(0, 188, 212, 0.9); border: 2px solid #00bcd4; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 14px; color: white; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.4);">
+                        ${index + 1}
+                    </div>
+                    <div style="position: absolute; top: -30px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.8); color: #00bcd4; padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: bold; white-space: nowrap; border: 1px solid #00bcd4;">
+                        ${(match.confidence * 100).toFixed(1)}%
+                    </div>
+                `,
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            });
+            
+            const marker = L.marker([match.lat, match.lng], { icon: matchIcon });
+            const popup = L.popup({
+                className: 'match-popup'
+            }).setContent(`
+                <div>
+                    <strong>Image Match #${index + 1}</strong><br>
+                    <small>Confidence: ${(match.confidence * 100).toFixed(1)}%</small>
+                    <br><small>Coordinates: ${match.lng}, ${match.lat}</small>
+                    <br><small>Scale: ${match.scale ? (match.scale * 100).toFixed(0) + '%' : '100%'}</small>
+                    <br><small>Size: ${match.width}x${match.height}px</small>
+                </div>
+            `);
+            
+            marker.bindPopup(popup);
+            marker.addTo(map);
+            matchMarkers.push(marker);
+        }
+        
+        function zoomToMatch(index) {
+            if (index < currentMatches.length) {
+                const match = currentMatches[index];
+                map.setView([match.lat, match.lng], 1, {
+                    animate: true,
+                    duration: 1.0
+                });
+                
+                // Open the popup for this match
+                if (matchMarkers[index]) {
+                    matchMarkers[index].openPopup();
+                }
+            }
+        }
+        
+        function clearMatchMarkers() {
+            matchMarkers.forEach(marker => {
+                map.removeLayer(marker);
+            });
+            matchMarkers = [];
+        }
+        
+        function clearOCRResults() {
+            clearMatchMarkers();
+            currentMatches = [];
+            document.getElementById('ocr-results').style.display = 'none';
+            document.getElementById('image-preview').style.display = 'none';
+            updateOCRStatus('Paste an image to find it on the map');
+        }
         
         function addSampleMarkers() {
             const imageHeight = 6144; // For Y axis flip
