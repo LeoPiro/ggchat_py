@@ -82,21 +82,38 @@ class SoundManager:
             for sound_type, path in self.sound_cache.items():
                 if not os.path.exists(path):
                     print(f"Warning: Sound file not found: {path}")
+                    # Try alternative paths
+                    alt_path = os.path.join(os.path.abspath('.'), os.path.basename(path))
+                    if os.path.exists(alt_path):
+                        self.sound_cache[sound_type] = alt_path
+                        print(f"Using alternative path: {alt_path}")
+                    
+            # Debug: Print all sound paths
+            print(f"Sound manager initialized with paths:")
+            for sound_type, path in self.sound_cache.items():
+                print(f"  {sound_type}: {path} (exists: {os.path.exists(path)})")
                     
         except Exception as e:
             print(f"Sound initialization error: {e}")
     
     def play_sound(self, sound_type):
         """Play sound with proper error handling and resource management"""
-        if not PLAYSOUND_AVAILABLE:
+        print(f"Attempting to play {sound_type} sound...")
+        
+        if not PLAYSOUND_AVAILABLE and not WINSOUND_AVAILABLE:
+            print("No sound libraries available")
             return
             
         if sound_type not in self.sound_cache:
+            print(f"Sound type '{sound_type}' not found in cache")
             return
             
         sound_path = self.sound_cache[sound_type]
         if not os.path.exists(sound_path):
+            print(f"Sound file not found: {sound_path}")
             return
+        
+        print(f"Playing {sound_type} from: {sound_path}")
         
         # Submit to thread pool instead of creating new threads
         try:
@@ -128,8 +145,12 @@ class SoundManager:
         """Callback for completed sound playback"""
         try:
             result = future.result(timeout=1)  # Quick timeout
-        except Exception:
-            pass  # Ignore completion errors
+            if result:
+                print("Sound played successfully")
+            else:
+                print("Sound failed to play")
+        except Exception as e:
+            print(f"Sound completion error: {e}")
     
     def cleanup(self):
         """Clean shutdown of sound manager"""
@@ -203,10 +224,15 @@ class ChatClient:
     
     def cleanup(self):
         """Clean shutdown of client resources"""
-        if hasattr(self, 'sound_manager'):
-            self.sound_manager.cleanup()
-        if self.ws:
-            self.ws.close()
+        try:
+            if self.ws:
+                self.ws.close()
+                self.ws = None
+        except Exception as e:
+            print(f"WebSocket cleanup error: {e}")
+        finally:
+            # Don't cleanup sound manager here - let GUI handle it
+            pass
 
 class ChatGui:
     def __init__(self, master):
@@ -381,6 +407,23 @@ class ChatGui:
                        bg=BG_COLOR, fg=FG_COLOR, selectcolor=BG_COLOR, activebackground=BG_COLOR
                        ).pack(anchor="w", padx=10)
 
+        # Test sound buttons
+        test_frame = tk.Frame(self.settings_win, bg=BG_COLOR)
+        test_frame.pack(fill="x", padx=10, pady=(10, 0))
+        
+        tk.Label(test_frame, text="Test Sounds:", bg=BG_COLOR, fg=FG_COLOR).pack(anchor="w")
+        
+        test_buttons_frame = tk.Frame(test_frame, bg=BG_COLOR)
+        test_buttons_frame.pack(fill="x", pady=(5, 0))
+        
+        tk.Button(test_buttons_frame, text="🔔 Test Notify", 
+                  command=lambda: self.test_sound('notify'),
+                  bg=BUTTON_BG, fg=FG_COLOR, activebackground=BUTTON_ACTIVE).pack(side=tk.LEFT, padx=(0, 5))
+        
+        tk.Button(test_buttons_frame, text="🚨 Test Alert", 
+                  command=lambda: self.test_sound('alert'),
+                  bg=BUTTON_BG, fg=FG_COLOR, activebackground=BUTTON_ACTIVE).pack(side=tk.LEFT)
+
         def pick_color_self():
             color_code = colorchooser.askcolor(title="Choose your own text color")[1]
             if color_code:
@@ -418,6 +461,19 @@ class ChatGui:
             self.text_area.tag_configure(f"user_{tag}", font=new_font + ("bold",))
         self.config["font_size"] = size
         self.save_config()
+    
+    def test_sound(self, sound_type):
+        """Test sound playback for debugging"""
+        try:
+            if hasattr(self, 'client') and hasattr(self.client, 'sound_manager'):
+                print(f"Testing {sound_type} sound...")
+                self.client.sound_manager.play_sound(sound_type)
+            else:
+                print(f"Cannot test sound: client or sound manager not available")
+                messagebox.showwarning("Sound Test", "Cannot test sound: client not connected")
+        except Exception as e:
+            print(f"Sound test error: {e}")
+            messagebox.showerror("Sound Test Error", f"Failed to test sound: {str(e)}")
 
     def open_map_window(self):
         """Open the GG Map in an integrated window"""
@@ -977,6 +1033,13 @@ if __name__ == "__main__":
                     self.client.cleanup()  # Use the new cleanup method
                 except:
                     pass
+                    
+            # Clean up sound manager if it exists
+            if hasattr(self, 'client') and hasattr(self.client, 'sound_manager'):
+                try:
+                    self.client.sound_manager.cleanup()
+                except Exception as e:
+                    print(f"Sound manager cleanup error: {e}")
         except Exception as e:
             print(f"Error during shutdown: {e}")
         finally:
