@@ -407,23 +407,6 @@ class ChatGui:
                        bg=BG_COLOR, fg=FG_COLOR, selectcolor=BG_COLOR, activebackground=BG_COLOR
                        ).pack(anchor="w", padx=10)
 
-        # Test sound buttons
-        test_frame = tk.Frame(self.settings_win, bg=BG_COLOR)
-        test_frame.pack(fill="x", padx=10, pady=(10, 0))
-        
-        tk.Label(test_frame, text="Test Sounds:", bg=BG_COLOR, fg=FG_COLOR).pack(anchor="w")
-        
-        test_buttons_frame = tk.Frame(test_frame, bg=BG_COLOR)
-        test_buttons_frame.pack(fill="x", pady=(5, 0))
-        
-        tk.Button(test_buttons_frame, text="🔔 Test Notify", 
-                  command=lambda: self.test_sound('notify'),
-                  bg=BUTTON_BG, fg=FG_COLOR, activebackground=BUTTON_ACTIVE).pack(side=tk.LEFT, padx=(0, 5))
-        
-        tk.Button(test_buttons_frame, text="🚨 Test Alert", 
-                  command=lambda: self.test_sound('alert'),
-                  bg=BUTTON_BG, fg=FG_COLOR, activebackground=BUTTON_ACTIVE).pack(side=tk.LEFT)
-
         def pick_color_self():
             color_code = colorchooser.askcolor(title="Choose your own text color")[1]
             if color_code:
@@ -462,18 +445,6 @@ class ChatGui:
         self.config["font_size"] = size
         self.save_config()
     
-    def test_sound(self, sound_type):
-        """Test sound playback for debugging"""
-        try:
-            if hasattr(self, 'client') and hasattr(self.client, 'sound_manager'):
-                print(f"Testing {sound_type} sound...")
-                self.client.sound_manager.play_sound(sound_type)
-            else:
-                print(f"Cannot test sound: client or sound manager not available")
-                messagebox.showwarning("Sound Test", "Cannot test sound: client not connected")
-        except Exception as e:
-            print(f"Sound test error: {e}")
-            messagebox.showerror("Sound Test Error", f"Failed to test sound: {str(e)}")
 
     def open_map_window(self):
         """Open the GG Map in an integrated window"""

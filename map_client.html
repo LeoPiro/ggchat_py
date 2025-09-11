@@ -100,26 +100,13 @@
             font-size: 18px;
         }
         
-        .connection-status {
+        .map-info {
             padding: 8px 12px;
             border-radius: 5px;
             font-weight: bold;
             text-align: center;
             font-size: 14px;
-        }
-        
-        .connected {
             background: #2e7d32;
-            color: white;
-        }
-        
-        .disconnected {
-            background: #c62828;
-            color: white;
-        }
-        
-        .connecting {
-            background: #f57c00;
             color: white;
         }
         
@@ -158,28 +145,6 @@
             margin-left: 8px;
         }
         
-        .ping-controls {
-            margin-top: 20px;
-            padding-top: 15px;
-            border-top: 1px solid #444;
-        }
-        
-        .ping-note {
-            background: #3d3d3d;
-            padding: 8px 12px;
-            border-radius: 5px;
-            text-align: center;
-            font-weight: bold;
-            color: #ffd700;
-            margin-bottom: 15px;
-            border: 1px solid #555;
-        }
-        
-        .snap-to-ping-control {
-            margin-top: 15px;
-            padding-top: 10px;
-            border-top: 1px solid #444;
-        }
         
         .toggle-label {
             display: flex;
@@ -223,24 +188,6 @@
             left: 22px;
         }
         
-        .online-users {
-            margin-top: 20px;
-            padding-top: 15px;
-            border-top: 1px solid #444;
-        }
-        
-        .user-list {
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        
-        .user-item {
-            padding: 5px 8px;
-            background: #3d3d3d;
-            margin-bottom: 5px;
-            border-radius: 3px;
-            font-size: 14px;
-        }
         
         #map {
             position: absolute;
@@ -255,13 +202,6 @@
             display: none;
         }
         
-        .ping-popup {
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 5px 8px;
-            border-radius: 3px;
-            font-size: 12px;
-        }
         
         .leaflet-popup-content-wrapper {
             background: rgba(0, 0, 0, 0.9);
@@ -273,52 +213,6 @@
             margin: 8px;
         }
         
-        /* Ping animation styles */
-        .ping-icon {
-            position: relative;
-        }
-        
-        .ping-icon-glow {
-            animation: glowPulse 1.5s ease-in-out infinite, fadeOut 30s ease-in-out forwards;
-        }
-        
-        @keyframes glowPulse {
-            0%, 100% { 
-                filter: drop-shadow(0 0 20px rgba(255, 215, 0, 1)) drop-shadow(0 0 40px rgba(255, 215, 0, 0.8)); 
-            }
-            50% { 
-                filter: drop-shadow(0 0 50px rgba(255, 215, 0, 1)) drop-shadow(0 0 80px rgba(255, 215, 0, 0.9)); 
-            }
-        }
-        
-        @keyframes fadeOut {
-            0% { opacity: 1; }
-            83.33% { opacity: 1; }  /* 25 seconds of 30 total */
-            100% { opacity: 0; }    /* fade out in last 5 seconds */
-        }
-        
-        .ping-ripple-safe {
-            position: absolute;
-            border: 3px solid rgba(255, 215, 0, 0.8);
-            border-radius: 50%;
-            pointer-events: none;
-            animation: rippleEffectSafe 1.5s ease-out 5;
-            z-index: 500;
-            width: 20px;
-            height: 20px;
-            transform-origin: center center;
-        }
-        
-        @keyframes rippleEffectSafe {
-            0% {
-                transform: scale(1);
-                opacity: 1;
-            }
-            100% {
-                transform: scale(6);
-                opacity: 0;
-            }
-        }
     </style>
 </head>
 <body>
@@ -330,7 +224,7 @@
                     <h3>🗺️ GG Map</h3>
                     <button id="toggle-sidebar" class="toggle-btn" title="Hide/Show Sidebar">❮</button>
                 </div>
-                <div id="connection-status" class="connection-status disconnected">Disconnected</div>
+                <div class="map-info">Static Map View</div>
             </div>
             
             <div class="layer-control">
@@ -362,34 +256,7 @@
                 </div>
             </div>
             
-            <div class="ping-controls">
-                <div class="ping-note">📍 Ping = Ctrl + Click</div>
-                
-                <div class="snap-to-ping-control">
-                    <label class="toggle-label">
-                        <input type="checkbox" id="snap-to-ping" checked>
-                        <span class="toggle-slider"></span>
-                        Auto-zoom to new pings
-                    </label>
-                    <small>Automatically center the map when someone else pings a location.</small>
-                </div>
-                
-                <div class="snap-to-ping-control">
-                    <label class="toggle-label">
-                        <input type="checkbox" id="ping-sounds" checked>
-                        <span class="toggle-slider"></span>
-                        Ping sounds
-                    </label>
-                    <small>Play sound effects for all ping actions (yours and others).</small>
-                </div>
-            </div>
             
-            <div class="online-users">
-                <h3>Online Guild Members (<span id="user-count">0</span>)</h3>
-                <div id="user-list" class="user-list">
-                    <div class="user-item">Connecting...</div>
-                </div>
-            </div>
         </div>
         
         <div id="map"></div>
@@ -406,14 +273,7 @@
         
         // Global variables
         let map;
-        let websocket;
-        let currentUser = null;
-        let onlineUsers = new Set();
         let mapLayers = {};
-        let userPings = new Map();
-        
-        // Audio for ping sound
-        const pingAudio = new Audio('/static/light.wav');
         
         // Layer colors and icons
         const layerConfig = {
@@ -460,8 +320,7 @@
                 }
             }
             
-            // Add click handler for pinging (Control + Left Click)
-            map.on('click', handleMapClick);
+            // Map is now static - no click handlers needed
             
             // Set up layer controls
             setupLayerControls();
@@ -481,341 +340,18 @@
             }
         }
         
-        function handleMapClick(e) {
-            // Only ping if Control key is held down
-            if (!e.originalEvent.ctrlKey || !websocket) return;
-            
-            const { lat, lng } = e.latlng;
-            const pingData = {
-                type: 'ping',
-                user: currentUser,
-                lat: lat,
-                lng: lng,
-                timestamp: Date.now()
-            };
-            
-            // Play ping sound (check if sounds are enabled)
-            const pingSoundsEnabled = document.getElementById('ping-sounds').checked;
-            if (pingSoundsEnabled) {
-                try {
-                    pingAudio.currentTime = 0; // Reset to start
-                    pingAudio.play().catch(e => {});
-                } catch (e) {
-                    // Sound play failed silently
-                }
-            }
-            
-            // Send ping to server
-            websocket.send(JSON.stringify(pingData));
-            
-            // Add ping to map immediately for responsiveness (your own ping)
-            addPingToMap(pingData, false);
-        }
         
-        function addPingToMap(pingData, fromOtherUser = false) {
-            const { user, lat, lng, timestamp } = pingData;
-            const timeStr = new Date(timestamp).toLocaleTimeString();
-            
-            // Play sound for pings from other users
-            if (fromOtherUser) {
-                // Check if ping sounds are enabled
-                const pingSoundsEnabled = document.getElementById('ping-sounds').checked;
-                if (pingSoundsEnabled) {
-                    try {
-                        pingAudio.currentTime = 0; // Reset to start
-                        pingAudio.play().catch(e => {});
-                    } catch (e) {
-                        // Sound play failed silently
-                    }
-                }
-                
-                // Snap to ping if enabled
-                const snapToPing = document.getElementById('snap-to-ping').checked;
-                if (snapToPing) {
-                    map.setView([lat, lng], -5, {
-                        animate: true,
-                        duration: 1.0
-                    });
-                }
-            }
-            
-            // Create custom icon with user color distinction
-            const isCurrentUser = user === currentUser;
-            
-            // Test with simplified marker (no animations)
-            const pingIcon = L.divIcon({
-                className: 'ping-icon-glow', // New glow animation class
-                html: `
-                    <div class="ping-username" style="position: absolute; top: -25px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.8); color: ${isCurrentUser ? '#ffd700' : '#ff5722'}; padding: 2px 6px; border-radius: 3px; font-size: 12px; font-weight: bold; white-space: nowrap; border: 1px solid ${isCurrentUser ? '#ffd700' : '#ff5722'};">${user}</div>
-                    <div style="background: ${isCurrentUser ? 'rgba(255, 215, 0, 0.9)' : 'rgba(255, 87, 34, 0.9)'}; border: 2px solid ${isCurrentUser ? '#ffd700' : '#ff5722'}; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: white; font-weight: bold; box-shadow: 0 4px 8px rgba(0,0,0,0.4);">📍</div>
-                `,
-                iconSize: [28, 28],
-                iconAnchor: [14, 14]
-            });
-            
-            // Create marker
-            const marker = L.marker([lat, lng], { icon: pingIcon });
-            const popup = L.popup({
-                className: 'ping-popup'
-            }).setContent(`
-                <div>
-                    <strong>${user}${isCurrentUser ? ' (You)' : ''}</strong><br>
-                    <small>Pinged at ${timeStr}</small>
-                    <br><small>Lat: ${lat.toFixed(0)}, Lng: ${lng.toFixed(0)}</small>
-                </div>
-            `);
-            
-            marker.bindPopup(popup);
-            marker.addTo(map);
-            
-            // Store marker for potential removal
-            if (!userPings.has(user)) {
-                userPings.set(user, []);
-            }
-            userPings.get(user).push(marker);
-            
-            // Auto-remove ping after 30 seconds
-            setTimeout(() => {
-                map.removeLayer(marker);
-                // Also remove from user pings tracking
-                if (userPings.has(user)) {
-                    const userMarkers = userPings.get(user);
-                    const index = userMarkers.indexOf(marker);
-                    if (index > -1) {
-                        userMarkers.splice(index, 1);
-                    }
-                }
-            }, 30000); // 30 seconds
-            
-            // Remove old pings from this user (keep only last 3, excluding the one that will auto-decay)
-            const userMarkers = userPings.get(user);
-            if (userMarkers.length > 3) {
-                const oldMarker = userMarkers.shift();
-                map.removeLayer(oldMarker);
-            }
-        }
         
-        function createRippleEffect(lat, lng, fromOtherUser) {
-            // Create ripple element
-            const ripple = document.createElement('div');
-            ripple.className = 'ping-ripple';
-            
-            // Convert lat/lng to pixel coordinates on the map pane
-            const point = map.latLngToLayerPoint([lat, lng]);
-            
-            // Position centered on the ping location
-            ripple.style.left = (point.x - 10) + 'px';
-            ripple.style.top = (point.y - 10) + 'px';
-            ripple.style.borderColor = fromOtherUser ? 'rgba(255, 87, 34, 0.8)' : 'rgba(255, 215, 0, 0.8)';
-            
-            // Store the lat/lng for zoom updates
-            ripple._lat = lat;
-            ripple._lng = lng;
-            
-            // Function to update position on zoom
-            const updatePosition = () => {
-                const newPoint = map.latLngToLayerPoint([ripple._lat, ripple._lng]);
-                ripple.style.left = (newPoint.x - 10) + 'px';
-                ripple.style.top = (newPoint.y - 10) + 'px';
-            };
-            
-            // Add zoom event listener
-            map.on('zoom', updatePosition);
-            map.on('zoomend', updatePosition);
-            
-            // Add to map pane instead of container
-            const mapPane = map.getPane('overlayPane');
-            mapPane.appendChild(ripple);
-            
-            // Remove after animation
-            setTimeout(() => {
-                if (ripple.parentNode) {
-                    map.off('zoom', updatePosition);
-                    map.off('zoomend', updatePosition);
-                    ripple.parentNode.removeChild(ripple);
-                }
-            }, 7500); // 5 iterations × 1.5s = 7.5s
-        }
         
-        function createRippleEffectSafe(lat, lng, fromOtherUser) {
-            // Create ripple element
-            const ripple = document.createElement('div');
-            ripple.className = 'ping-ripple-safe';
-            
-            // Convert lat/lng to pixel coordinates ONCE and store
-            const point = map.latLngToLayerPoint([lat, lng]);
-            
-            // Position centered on the ping location
-            ripple.style.left = (point.x - 10) + 'px';
-            ripple.style.top = (point.y - 10) + 'px';
-            ripple.style.borderColor = fromOtherUser ? 'rgba(255, 87, 34, 0.8)' : 'rgba(255, 215, 0, 0.8)';
-            ripple.style.position = 'absolute';
-            ripple.style.pointerEvents = 'none';
-            ripple.style.zIndex = '500'; // Lower z-index to avoid interference
-            
-            // Add directly to map container (not to Leaflet panes)
-            const mapContainer = document.getElementById('map');
-            mapContainer.appendChild(ripple);
-            
-            // Remove after animation (no zoom tracking to avoid interference)
-            setTimeout(() => {
-                if (ripple.parentNode) {
-                    ripple.parentNode.removeChild(ripple);
-                }
-            }, 7500); // 5 iterations × 1.5s = 7.5s
-        }
         
-        function connectToServer() {
-            const statusEl = document.getElementById('connection-status');
-            statusEl.textContent = 'Connecting...';
-            statusEl.className = 'connection-status connecting';
-            
-            // Check for username in URL parameters first
-            const urlParams = new URLSearchParams(window.location.search);
-            const usernameFromUrl = urlParams.get('username');
-            
-            // Use URL parameter if available, otherwise prompt
-            if (usernameFromUrl && usernameFromUrl.trim()) {
-                currentUser = usernameFromUrl.trim();
-            } else {
-                currentUser = prompt('Enter your guild username:') || 'Anonymous';
-            }
-            
-            try {
-                websocket = new WebSocket(`ws://${SERVER_URL}/map`);
-                
-                websocket.onopen = function(event) {
-                    statusEl.textContent = 'Connected';
-                    statusEl.className = 'connection-status connected';
-                    
-                    // Send join message
-                    websocket.send(JSON.stringify({
-                        type: 'join',
-                        user: currentUser
-                    }));
-                };
-                
-                websocket.onmessage = function(event) {
-                    const data = JSON.parse(event.data);
-                    handleServerMessage(data);
-                };
-                
-                websocket.onclose = function(event) {
-                    statusEl.textContent = 'Disconnected';
-                    statusEl.className = 'connection-status disconnected';
-                    
-                    // Attempt to reconnect after 3 seconds
-                    setTimeout(connectToServer, 3000);
-                };
-                
-                websocket.onerror = function(error) {
-                    statusEl.textContent = 'Connection Error';
-                    statusEl.className = 'connection-status disconnected';
-                };
-                
-            } catch (error) {
-                statusEl.textContent = 'Connection Failed';
-                statusEl.className = 'connection-status disconnected';
-                
-                // Retry connection
-                setTimeout(connectToServer, 3000);
-            }
-        }
         
-        function handleServerMessage(data) {
-            switch (data.type) {
-                case 'ping':
-                    if (data.user !== currentUser) {
-                        addPingToMap(data, true); // fromOtherUser = true
-                    }
-                    break;
-                    
-                case 'chat_notification':
-                    // Display ping notification in map interface
-                    showChatNotification(data.message);
-                    break;
-                    
-                case 'user_list':
-                    updateUserList(data.users);
-                    break;
-                    
-                case 'user_joined':
-                    onlineUsers.add(data.user);
-                    updateUserList([...onlineUsers]);
-                    break;
-                    
-                case 'user_left':
-                    onlineUsers.delete(data.user);
-                    updateUserList([...onlineUsers]);
-                    // Remove pings from disconnected user
-                    removePingsFromUser(data.user);
-                    break;
-                    
-                default:
-                    // Unknown message type - ignore silently
-            }
-        }
         
-        function updateUserList(users) {
-            onlineUsers = new Set(users);
-            const userListEl = document.getElementById('user-list');
-            const userCountEl = document.getElementById('user-count');
-            
-            userCountEl.textContent = users.length;
-            
-            if (users.length === 0) {
-                userListEl.innerHTML = '<div class="user-item">No users online</div>';
-                return;
-            }
-            
-            userListEl.innerHTML = users.map(user => 
-                `<div class="user-item">${user === currentUser ? '👤 ' : ''}${user}</div>`
-            ).join('');
-        }
         
-        function removePingsFromUser(user) {
-            if (userPings.has(user)) {
-                userPings.get(user).forEach(marker => map.removeLayer(marker));
-                userPings.delete(user);
-            }
-        }
         
-        function showChatNotification(message) {
-            // Create a temporary notification element
-            const notification = document.createElement('div');
-            notification.style.cssText = `
-                position: fixed;
-                top: 80px;
-                right: 20px;
-                background: rgba(0, 0, 0, 0.8);
-                color: #fff;
-                padding: 12px 20px;
-                border-radius: 5px;
-                font-size: 14px;
-                z-index: 2000;
-                max-width: 300px;
-                word-wrap: break-word;
-                border: 1px solid #555;
-            `;
-            notification.textContent = message;
-            
-            // Add to page
-            document.body.appendChild(notification);
-            
-            // Auto-remove after 5 seconds
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
-                }
-            }, 5000);
-            
-            console.log('[Map Chat]', message);
-        }
         
         // Initialize everything when page loads
         document.addEventListener('DOMContentLoaded', function() {
             initMap();
-            connectToServer();
             
             // Add some sample markers for testing
             addSampleMarkers();
