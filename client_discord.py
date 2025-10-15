@@ -46,7 +46,7 @@ except ImportError:
 except Exception as e:
     CEF_AVAILABLE = False
 
-CURRENT_VERSION = "2.0.3"
+CURRENT_VERSION = "3.0"
 CONFIG_FILE     = "chat_config.json"
 SERVER_URL      = "http://45.79.137.244:8800".rstrip("/")
 ICON_FILE       = "gg_fUv_icon.ico"
@@ -153,6 +153,10 @@ class ChatClient:
         self.token = token
         self.ws    = None
         self.sound_manager = SoundManager()  # Initialize sound manager
+        self.reconnect_attempts = 0
+        self.max_reconnect_attempts = 10
+        self.manual_disconnect = False
+        self.reconnect_timer = None
 
     def start(self):
         scheme = "wss" if SERVER_URL.startswith("https") else "ws"
@@ -170,6 +174,7 @@ class ChatClient:
         threading.Thread(target=self.ws.run_forever, daemon=True).start()
 
     def on_open(self, ws):
+        self.reconnect_attempts = 0
         self.gui.append_text("[System] Connected to chat server.")
         self.gui.connect_btn.config(text="Disconnect", command=self.gui.disconnect)
 
@@ -177,19 +182,76 @@ class ChatClient:
         self.gui.append_text(f"[System] WS Error: {error}")
 
     def on_close(self, ws, code, msg):
+        """
+        Handle websocket disconnection with auto-reconnect logic.
+        
+        Args:
+            ws: WebSocket instance
+            code: Close code
+            msg: Close message
+        """
+        # Don't reconnect if token is invalid/expired
         if code == 4001 or (msg and "invalid" in msg.lower()):
             self.gui.config.pop("token", None)
             self.gui.save_config()
             self.gui.append_text("[System] Token expired or invalid. Please log in again.")
-        else:
+            self.gui.on_disconnected()
+            return
+        
+        # Don't reconnect if user manually disconnected
+        if self.manual_disconnect:
             self.gui.append_text(f"[System] Disconnected (code={code}, msg={msg}).")
-        self.gui.on_disconnected()
+            self.gui.on_disconnected()
+            return
+        
+        # Auto-reconnect logic for network issues
+        self.gui.append_text(f"[System] Disconnected (code={code}, msg={msg}).")
+        
+        if self.reconnect_attempts < self.max_reconnect_attempts:
+            self.reconnect_attempts += 1
+            # Exponential backoff: 2, 4, 8, 16, 32 seconds (capped at 60)
+            delay = min(2 ** self.reconnect_attempts, 60)
+            self.gui.append_text(f"[System] Attempting to reconnect in {delay}s... (Attempt {self.reconnect_attempts}/{self.max_reconnect_attempts})")
+            
+            # Schedule reconnection
+            self.reconnect_timer = threading.Timer(delay, self.attempt_reconnect)
+            self.reconnect_timer.daemon = True
+            self.reconnect_timer.start()
+        else:
+            self.gui.append_text(f"[System] Maximum reconnection attempts reached. Click login to reconnect.")
+            self.gui.on_disconnected()
+    
+    def attempt_reconnect(self):
+        """
+        Attempt to reconnect to the chat server.
+        """
+        try:
+            self.gui.append_text("[System] Reconnecting...")
+            self.start()
+        except Exception as e:
+            self.gui.append_text(f"[System] Reconnection failed: {e}")
+            # Will retry on next on_close call if attempts remain
 
     def send(self, msg):
         if self.ws:
             self.ws.send(msg)
 
     def on_message(self, ws, message):
+        # Check if it's a JSON message (poll data)
+        try:
+            data = json.loads(message)
+            if data.get("type") == "poll":
+                # New poll created
+                self.gui.display_poll(data["poll_id"], data["question"], data["creator"], data["votes"])
+                return
+            elif data.get("type") == "poll_update":
+                # Poll vote update
+                self.gui.update_poll_votes(data["poll_id"], data["votes"])
+                return
+        except (json.JSONDecodeError, KeyError):
+            # Not a JSON message, treat as regular message
+            pass
+        
         # Play notification sound using robust sound manager
         if self.gui.notify_var.get():
             self.sound_manager.play_sound('notify')
@@ -219,6 +281,7 @@ class ChatGui:
         self.username = None
         self.config = self.load_config()
         self.is_maximized = False
+        self.active_polls = {}  # Track active polls {poll_id: {frame, question, votes, buttons}}
 
         self.custom_self_color = self.config.get("self_msg_color", "yellow")
         self.custom_others_color = self.config.get("others_msg_color", FG_COLOR)
@@ -245,6 +308,10 @@ class ChatGui:
         self.users_button = tk.Button(top, text="Online: 0", bg=BUTTON_BG, fg=FG_COLOR,
                                       activebackground=BUTTON_ACTIVE, relief=tk.RAISED, bd=1)
         self.users_button.pack(side=tk.LEFT, padx=10)
+        
+        self.dkp_label = tk.Label(top, text="DKP: 0", bg=BG_COLOR, fg="#ffd700",
+                                 font=("Segoe UI", 10, "bold"))
+        self.dkp_label.pack(side=tk.LEFT, padx=10)
 
         self.connect_btn = tk.Button(top, text="Login with Discord", command=self.start_oauth,
                                      bg=BUTTON_BG, fg=FG_COLOR, activebackground=BUTTON_ACTIVE)
@@ -253,6 +320,24 @@ class ChatGui:
         self.settings_btn = tk.Button(top, text="⚙ Settings", command=self.open_settings_window,
                                       bg=BUTTON_BG, fg=FG_COLOR, activebackground=BUTTON_ACTIVE)
         self.settings_btn.pack(side=tk.RIGHT, padx=5)
+
+        # Resources dropdown menu
+        self.resources_menubutton = tk.Menubutton(top, text="📚 Resources", 
+                                                   bg=BUTTON_BG, fg=FG_COLOR, 
+                                                   activebackground=BUTTON_ACTIVE,
+                                                   relief=tk.RAISED, borderwidth=1)
+        self.resources_menubutton.pack(side=tk.RIGHT, padx=5)
+        
+        self.resources_menu = tk.Menu(self.resources_menubutton, tearoff=0,
+                                       bg=BG_COLOR, fg=FG_COLOR,
+                                       activebackground=BUTTON_ACTIVE, activeforeground=FG_COLOR)
+        self.resources_menu.add_command(label="GG Dockmaster Changes",
+                                         command=lambda: webbrowser.open("https://ggdm-page.vercel.app/"))
+        self.resources_menu.add_command(label="In Game Map Icons",
+                                         command=lambda: webbrowser.open("https://github.com/Wesman687/GGDM/releases"))
+        self.resources_menu.add_command(label="GG Chat",
+                                         command=lambda: webbrowser.open("https://github.com/LeoPiro/ggchat_py/releases"))
+        self.resources_menubutton.config(menu=self.resources_menu)
 
         self.pin_btn = tk.Button(top, text="📌 Pin", command=self.toggle_pin,
                                  bg=BUTTON_BG, fg=FG_COLOR, activebackground=BUTTON_ACTIVE)
@@ -283,6 +368,7 @@ class ChatGui:
         self.text_area.tag_configure("mention", foreground="yellow", font=("Segoe UI", font_size, "bold"))
         self.text_area.tag_configure("self_msg", foreground=self.custom_self_color, font=("Segoe UI", font_size, "bold"))
         self.text_area.tag_configure("others_msg", foreground=self.custom_others_color, font=("Segoe UI", font_size))
+        self.text_area.tag_configure("system_msg", foreground="#00ff00", font=("Segoe UI", font_size, "italic"))
 
         scrollbar = ttk.Scrollbar(self.text_frame, orient="vertical",
                                   command=self.text_area.yview, style="Vertical.TScrollbar")
@@ -341,14 +427,128 @@ class ChatGui:
                 self.text_area.tag_configure(name_tag, foreground=self.custom_others_color, font=("Segoe UI", 13, "bold"))
             self.text_area.insert("end", f"[{sender}]", name_tag)
 
-            # Insert message with custom message color
+            # Insert message with clickable location links
             msg_tag = "self_msg" if sender.lower() == (self.username or '').lower() else "others_msg"
-            self.text_area.insert("end", message, msg_tag)
+            self.insert_message_with_links(message, msg_tag)
         else:
             self.text_area.insert("end", full_line)
 
         self.text_area.configure(state="disabled")
         self.text_area.see("end")
+    
+    def insert_message_with_links(self, message, base_tag):
+        """Insert message text with clickable #uooutlands links and base64 strings"""
+        # Pattern to match:
+        # 1. #uooutlands followed by pipe-separated values (can include spaces within values)
+        #    Pattern: #uooutlands|value|value|number|number|number (numbers can be negative)
+        # 2. Base64-like strings: 50+ chars of alphanumeric + / = and unicode chars
+        pattern = r'(#uooutlands\|[^|]+\|[^|]+\|-?\d+\|-?\d+\|-?\d+|[A-Za-z0-9+/=\u0080-\uFFFF]{50,})'
+        
+        parts = re.split(pattern, message)
+        
+        for part in parts:
+            # Check if it's a #uooutlands string or a long base64-like string
+            is_location = part.startswith('#uooutlands')
+            is_base64 = len(part) >= 50 and re.match(r'^[A-Za-z0-9+/=\u0080-\uFFFF]+$', part)
+            
+            if is_location or is_base64:
+                # Create unique tag for this clickable link
+                link_tag = f"link_{id(part)}_{time.time()}"
+                
+                # Insert the link text with both base formatting and link styling
+                self.text_area.insert("end", part, (base_tag, link_tag))
+                
+                # Configure the link tag with underline and click handler
+                self.text_area.tag_configure(link_tag, underline=True, foreground="#00d4ff")
+                self.text_area.tag_bind(link_tag, "<Button-1>", lambda e, text=part: self.copy_location_to_clipboard(text))
+                self.text_area.tag_bind(link_tag, "<Enter>", lambda e, tag=link_tag: self.text_area.config(cursor="hand2"))
+                self.text_area.tag_bind(link_tag, "<Leave>", lambda e: self.text_area.config(cursor=""))
+            else:
+                # Regular text with base formatting
+                self.text_area.insert("end", part, base_tag)
+    
+    def copy_location_to_clipboard(self, text):
+        """Copy location/base64 text to clipboard silently"""
+        try:
+            self.master.clipboard_clear()
+            self.master.clipboard_append(text)
+            self.master.update()  # Ensure clipboard is updated
+        except Exception as e:
+            print(f"Failed to copy to clipboard: {e}")
+    
+    def display_poll(self, poll_id, question, creator, votes):
+        """Display a poll in the chat"""
+        self.text_area.configure(state="normal")
+        
+        # Add poll header
+        ts = datetime.now().strftime("%H:%M")
+        self.text_area.insert("end", f"\n[{ts}] ", "")
+        self.text_area.insert("end", f"📊 Poll by {creator}: ", ("self_msg" if creator == self.username else "others_msg", "bold"))
+        self.text_area.insert("end", f"{question}\n", "")
+        
+        # Create poll window marker
+        poll_window_start = self.text_area.index("end-1c linestart")
+        
+        # Insert vote buttons as text (we'll use window_create for actual buttons)
+        button_frame = tk.Frame(self.text_area, bg=ENTRY_BG, relief=tk.RAISED, bd=2, padx=5, pady=5)
+        
+        # Vote counts
+        up_votes = sum(1 for v in votes.values() if v == "up")
+        down_votes = sum(1 for v in votes.values() if v == "down")
+        
+        # Thumbs up button
+        up_btn = tk.Button(button_frame, text=f"👍 {up_votes}", bg=BUTTON_BG, fg="#00ff00", 
+                          activebackground=BUTTON_ACTIVE, font=("Segoe UI", 10, "bold"),
+                          command=lambda: self.vote_poll(poll_id, "up"))
+        up_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Thumbs down button
+        down_btn = tk.Button(button_frame, text=f"👎 {down_votes}", bg=BUTTON_BG, fg="#ff5555",
+                            activebackground=BUTTON_ACTIVE, font=("Segoe UI", 10, "bold"),
+                            command=lambda: self.vote_poll(poll_id, "down"))
+        down_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Embed the frame in the text widget
+        self.text_area.window_create("end", window=button_frame)
+        self.text_area.insert("end", "\n\n")
+        
+        # Store poll info for updates
+        self.active_polls[poll_id] = {
+            "frame": button_frame,
+            "up_btn": up_btn,
+            "down_btn": down_btn,
+            "question": question,
+            "votes": votes
+        }
+        
+        self.text_area.configure(state="disabled")
+        self.text_area.see("end")
+    
+    def update_poll_votes(self, poll_id, votes):
+        """Update vote counts for an existing poll"""
+        if poll_id not in self.active_polls:
+            return
+        
+        poll = self.active_polls[poll_id]
+        poll["votes"] = votes
+        
+        # Calculate vote counts
+        up_votes = sum(1 for v in votes.values() if v == "up")
+        down_votes = sum(1 for v in votes.values() if v == "down")
+        
+        # Update button text
+        poll["up_btn"].config(text=f"👍 {up_votes}")
+        poll["down_btn"].config(text=f"👎 {down_votes}")
+    
+    def vote_poll(self, poll_id, vote):
+        """Send a vote for a poll"""
+        if self.client and self.client.ws:
+            vote_data = json.dumps({
+                "type": "poll_vote",
+                "poll_id": poll_id,
+                "vote": vote
+            })
+            self.client.send(vote_data)
 
     def get_user_color(self, username):
         return f"user_{username}"
@@ -408,6 +608,10 @@ class ChatGui:
 
         tk.Button(self.settings_win, text="Pick Others' Text Color", command=pick_color_others,
                   bg=BUTTON_BG, fg=FG_COLOR, activebackground=BUTTON_ACTIVE).pack(pady=5, padx=10)
+        
+        # Version information at the bottom
+        tk.Label(self.settings_win, text=f"Version: {CURRENT_VERSION}", 
+                 bg=BG_COLOR, fg="#888888", font=("Segoe UI", 9)).pack(side=tk.BOTTOM, pady=10)
 
     def set_font_size(self, size):
         new_font = ("Segoe UI", size)
@@ -923,13 +1127,13 @@ if __name__ == "__main__":
         install_label.pack()
 
     def copy_to_clipboard(self, text):
-        """Copy text to clipboard"""
+        """Copy text to clipboard silently"""
         try:
             self.master.clipboard_clear()
             self.master.clipboard_append(text)
-            messagebox.showinfo("Copied", "URL copied to clipboard!")
+            self.master.update()  # Ensure clipboard is updated
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to copy to clipboard: {str(e)}")
+            print(f"Failed to copy to clipboard: {e}")
 
     def poll_online_users(self):
         def fetch():
@@ -942,6 +1146,21 @@ if __name__ == "__main__":
                 print(f"Failed to fetch online count: {e}")
             finally:
                 self.master.after(15000, self.poll_online_users)
+        threading.Thread(target=fetch, daemon=True).start()
+    
+    def poll_dkp(self):
+        def fetch():
+            try:
+                if self.username:
+                    resp = requests.get(f"http://45.79.137.244:8800/dkp?username={self.username}", timeout=5)
+                    if resp.ok:
+                        dkp = resp.json().get("dkp", 0)
+                        self.dkp_label.config(text=f"DKP: {dkp}")
+            except Exception as e:
+                print(f"Failed to fetch DKP: {e}")
+            finally:
+                # Poll DKP every 5 minutes (300000 ms)
+                self.master.after(300000, self.poll_dkp)
         threading.Thread(target=fetch, daemon=True).start()
 
     def load_config(self):
@@ -1024,12 +1243,32 @@ if __name__ == "__main__":
                 break
 
     def start_chat(self):
+        """
+        Start the chat connection with the server.
+        """
         self.client = ChatClient(self, self.token)
+        # Reset manual disconnect flag for new connection
+        self.client.manual_disconnect = False
         self.client.start()
+        # Start polling for DKP
+        self.poll_dkp()
 
     def disconnect(self):
-        if self.client and self.client.ws:
-            self.client.ws.close()
+        """
+        Manually disconnect from the chat server.
+        """
+        if self.client:
+            # Set manual disconnect flag to prevent auto-reconnect
+            self.client.manual_disconnect = True
+            
+            # Cancel any pending reconnection attempts
+            if self.client.reconnect_timer:
+                self.client.reconnect_timer.cancel()
+                self.client.reconnect_timer = None
+            
+            # Close the websocket connection
+            if self.client.ws:
+                self.client.ws.close()
 
     def on_disconnected(self):
         self.client = None
@@ -1040,6 +1279,20 @@ if __name__ == "__main__":
     def on_send(self, event=None, custom=None):
         msg = custom or self.entry.get().strip()
         if msg and self.client:
+            # Check if it's a poll command
+            if msg.startswith('/poll '):
+                question = msg[6:].strip()
+                if question:
+                    # Send poll creation request as JSON
+                    poll_data = json.dumps({
+                        "type": "poll_create",
+                        "question": question
+                    })
+                    self.client.send(poll_data)
+                    if not custom:
+                        self.entry.delete(0, tk.END)
+                return
+            
             self.client.send(msg)
             if not custom:
                 self.entry.delete(0, tk.END)

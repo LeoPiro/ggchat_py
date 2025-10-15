@@ -5,6 +5,7 @@ import asyncio
 import uvicorn
 import httpx
 import json
+import yaml
 
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import HTMLResponse
@@ -22,6 +23,7 @@ CHANNEL_ID    = int(os.environ.get("DISCORD_CHANNEL_ID", "0"))
 BOT_TOKEN     = os.environ.get("DISCORD_BOT_TOKEN")
 REDIRECT_URI  = os.environ.get("REDIRECT_URI", "http://localhost:8888/callback")
 JWT_SECRET    = os.environ.get("JWT_SECRET", secrets.token_urlsafe(32))
+DKP_FILE_PATH = os.environ.get("DKP_FILE_PATH", "/root/GG_Discord/GGDiscordBot/cogs/dkp.yaml")
 
 # Check if Discord integration is enabled
 DISCORD_ENABLED = all([CLIENT_ID, CLIENT_SECRET, GUILD_ID, BOT_TOKEN, CHANNEL_ID])
@@ -32,9 +34,40 @@ oauth_states = {}  # Maps OAuth state -> JWT
 connections  = set()  # WebSocket connections
 map_connections = set()  # Map WebSocket connections
 channel_ref  = None  # Holds Discord channel object once bot is ready
+active_polls = {}  # Maps poll_id -> {question, votes: {username: vote}, creator, timestamp}
+dkp_data = {}  # Cached DKP data {username: points}
+dkp_last_updated = 0  # Timestamp of last DKP file read
 
 # Mount static files for serving map assets
 app.mount("/static", StaticFiles(directory="."), name="static")
+
+# === DKP FUNCTIONS ===
+def load_dkp_data():
+    """Load DKP data from YAML file"""
+    global dkp_data, dkp_last_updated
+    try:
+        if os.path.exists(DKP_FILE_PATH):
+            with open(DKP_FILE_PATH, 'r') as f:
+                dkp_data = yaml.safe_load(f) or {}
+            dkp_last_updated = time.time()
+            print(f"[DKP] Loaded {len(dkp_data)} DKP entries")
+        else:
+            print(f"[DKP] File not found: {DKP_FILE_PATH}")
+            dkp_data = {}
+    except Exception as e:
+        print(f"[DKP] Error loading DKP data: {e}")
+        dkp_data = {}
+
+def get_user_dkp(username):
+    """Get DKP for a specific user"""
+    # Refresh DKP data if it's older than 5 minutes
+    if time.time() - dkp_last_updated > 300:  # 5 minutes
+        load_dkp_data()
+    
+    return dkp_data.get(username.lower(), 0)
+
+# Load DKP data on startup
+load_dkp_data()
 
 # === DISCORD BOT SETUP ===
 if DISCORD_ENABLED:
@@ -132,6 +165,12 @@ if DISCORD_ENABLED:
     async def get_token(state: str):
         token = oauth_states.get(state)
         return {"token": token}
+    
+    @app.get("/dkp")
+    async def get_dkp(username: str):
+        """Get DKP for a specific user"""
+        dkp = get_user_dkp(username)
+        return {"username": username, "dkp": dkp}
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
@@ -148,6 +187,69 @@ if DISCORD_ENABLED:
         try:
             while True:
                 text = await websocket.receive_text()
+                
+                # Check if it's a JSON message (poll command)
+                try:
+                    json_data = json.loads(text)
+                    if json_data.get("type") == "poll_create":
+                        # Handle poll creation
+                        poll_id = f"poll_{int(time.time())}_{secrets.token_urlsafe(8)}"
+                        active_polls[poll_id] = {
+                            "question": json_data["question"],
+                            "votes": {},
+                            "creator": data['username'],
+                            "timestamp": time.time()
+                        }
+                        
+                        # Broadcast poll to all clients
+                        poll_msg = json.dumps({
+                            "type": "poll",
+                            "poll_id": poll_id,
+                            "question": json_data["question"],
+                            "creator": data['username'],
+                            "votes": {}
+                        })
+                        
+                        for conn in connections.copy():
+                            try:
+                                await conn.send_text(poll_msg)
+                            except:
+                                connections.discard(conn)
+                        
+                        # Send to Discord channel
+                        if channel_ref:
+                            try:
+                                await channel_ref.send(f"📊 **Poll from {data['username']}:** {json_data['question']}")
+                            except Exception as e:
+                                print(f"[!] Failed to send poll to Discord: {e}")
+                        continue
+                    
+                    elif json_data.get("type") == "poll_vote":
+                        # Handle poll vote
+                        poll_id = json_data["poll_id"]
+                        vote = json_data["vote"]  # "up" or "down"
+                        
+                        if poll_id in active_polls:
+                            active_polls[poll_id]["votes"][data['username']] = vote
+                            
+                            # Broadcast vote update to all clients
+                            vote_msg = json.dumps({
+                                "type": "poll_update",
+                                "poll_id": poll_id,
+                                "votes": active_polls[poll_id]["votes"]
+                            })
+                            
+                            for conn in connections.copy():
+                                try:
+                                    await conn.send_text(vote_msg)
+                                except:
+                                    connections.discard(conn)
+                        continue
+                    
+                except (json.JSONDecodeError, KeyError):
+                    # Not a JSON message or not a poll command, treat as regular message
+                    pass
+                
                 msg = f"[{data['username']}] {text}"
 
                 # Send to WebSocket clients
@@ -290,7 +392,7 @@ if DISCORD_ENABLED and bot:
 
 # === MAIN ENTRY ===
 async def main():
-    config = uvicorn.Config(app, host="0.0.0.0", port=8888, log_level="info")
+    config = uvicorn.Config(app, host="0.0.0.0", port=8800, log_level="info")
     server = uvicorn.Server(config)
 
     tasks = [server.serve()]

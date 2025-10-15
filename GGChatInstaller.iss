@@ -1,6 +1,6 @@
 [Setup]
 AppName=GG Chat
-AppVersion=2.0.3
+AppVersion=3.0
 AppPublisher=GG Chat
 AppPublisherURL=https://github.com/LeoPiro/ggchat_py
 AppSupportURL=https://github.com/LeoPiro/ggchat_py
@@ -16,7 +16,7 @@ DisableWelcomePage=yes
 ; Upgrade handling
 UninstallDisplayName=GG Chat
 AppId={{A3B1C2D4-E5F6-7890-ABCD-EF1234567890}
-VersionInfoVersion=2.0.3
+VersionInfoVersion=3.0
 VersionInfoCompany=GG Chat
 VersionInfoDescription=GG Chat Application
 VersionInfoCopyright=Copyright (C) 2025
